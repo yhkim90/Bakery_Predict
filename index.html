@@ -1,0 +1,964 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="제빵 실기 예상">
+  <meta name="theme-color" content="#5C4033">
+  <title>제빵 실기 예상</title>
+  <style>
+    :root {
+      --bg: #f6f1ea;
+      --surface: #fffcf7;
+      --text: #3d2b22;
+      --muted: #8a7364;
+      --accent: #5c4033;
+      --line: #e6d9cc;
+      --danger: #9a3b2f;
+      --ok: #3d6b4f;
+      --warn: #8a5a20;
+      --radius: 16px;
+      --tap: 44px;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+      font-size: 17px;
+      line-height: 1.45;
+    }
+    body {
+      padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
+    }
+    button, input, select, textarea { font: inherit; color: inherit; }
+    button { appearance: none; border: 0; background: none; padding: 0; cursor: pointer; }
+    .app { width: min(430px, 100%); margin: 0 auto; padding: 8px 20px 108px; }
+    .tabbar {
+      position: fixed; left: 0; right: 0; bottom: 0;
+      display: grid; grid-template-columns: repeat(4, 1fr);
+      padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
+      background: var(--bg); border-top: 1px solid var(--line);
+    }
+    .tabbar button { min-height: 48px; font-size: 12px; font-weight: 700; color: var(--muted); }
+    .tabbar button.on { color: var(--accent); }
+    .topbar { display: flex; align-items: center; min-height: var(--tap); gap: 8px; margin-bottom: 8px; }
+    .topbar h1, .topbar h2 { flex: 1; margin: 0; font-size: 20px; font-weight: 700; text-align: center; }
+    .ghost { min-width: 52px; min-height: var(--tap); color: var(--accent); font-weight: 600; font-size: 15px; }
+    .lede { margin: 0 0 16px; color: var(--muted); font-size: 14px; }
+    .site { margin: 0 0 16px; color: var(--accent); font-size: 13px; font-weight: 700; }
+    .card {
+      padding: 14px 16px; border-radius: var(--radius);
+      background: var(--surface); border: 1px solid var(--line);
+    }
+    .stats {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 16px;
+    }
+    .stats .card { text-align: center; padding: 12px 8px; }
+    .stats small { display: block; color: var(--muted); font-size: 12px; font-weight: 700; }
+    .stats strong { display: block; margin-top: 4px; font-size: 22px; }
+    .btn {
+      display: flex; align-items: center; justify-content: center;
+      width: 100%; min-height: 52px; margin-top: 12px; border-radius: 999px; font-weight: 700;
+    }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-secondary { background: #efe4d8; color: var(--accent); }
+    .btn-danger { color: var(--danger); }
+    .stack { display: flex; flex-direction: column; gap: 10px; }
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    .field span, .section-title { color: var(--muted); font-size: 13px; font-weight: 700; }
+    .section-title { margin: 18px 0 8px; }
+    input[type="text"], input[type="date"], input[type="month"], input[type="file"], select, textarea {
+      width: 100%; min-height: var(--tap); padding: 10px 12px;
+      border: 1px solid var(--line); border-radius: 12px; background: var(--surface);
+    }
+    textarea { min-height: 180px; resize: vertical; line-height: 1.5; }
+    .sample {
+      margin: 0; padding: 12px 14px; border-radius: 12px; background: #efe4d8;
+      color: var(--text); font-size: 13px; white-space: pre-wrap; word-break: break-all;
+    }
+    .ok { color: var(--ok); font-size: 14px; font-weight: 700; }
+    .switch {
+      display: flex; flex-wrap: wrap; gap: 6px;
+      margin: 0 0 16px; padding: 4px; border-radius: 12px; background: #efe4d8;
+    }
+    .switch button {
+      flex: 1 1 22%; min-height: 40px; border-radius: 10px; font-weight: 700; color: var(--muted); font-size: 14px;
+    }
+    .switch button.on { background: var(--surface); color: var(--accent); }
+    .rank {
+      display: grid; grid-template-columns: 28px 1fr auto; gap: 10px; align-items: center;
+      padding: 12px 0; border-bottom: 1px solid var(--line);
+    }
+    .rank:last-child { border-bottom: 0; }
+    .num {
+      width: 28px; height: 28px; border-radius: 999px; background: var(--accent); color: #fff;
+      display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700;
+    }
+    .num.dim { background: #efe4d8; color: var(--muted); }
+    .rank small { display: block; margin-top: 2px; color: var(--muted); font-size: 13px; }
+    .bar { height: 6px; border-radius: 99px; background: #efe4d8; margin-top: 8px; overflow: hidden; }
+    .bar i { display: block; height: 100%; background: var(--accent); }
+    .cal-head {
+      display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; margin-bottom: 8px;
+    }
+    .cal-head h2 { margin: 0; text-align: center; font-size: 18px; }
+    .week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-bottom: 4px; }
+    .week span { text-align: center; color: var(--muted); font-size: 12px; font-weight: 700; padding: 6px 0; }
+    .days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+    .day {
+      min-height: 54px; border-radius: 12px; padding: 4px 2px 6px;
+      background: transparent; display: flex; flex-direction: column; align-items: center; gap: 2px;
+    }
+    .day.on { background: var(--surface); border: 1px solid var(--line); }
+    .day.today { outline: 2px solid var(--accent); }
+    .day.empty { visibility: hidden; }
+    .day b { font-size: 13px; }
+    .dot { width: 6px; height: 6px; border-radius: 99px; background: var(--accent); }
+    .muted { color: var(--muted); font-size: 14px; }
+    .warn { color: var(--warn); font-size: 13px; }
+    .item-link {
+      display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center;
+      padding: 14px 0; text-align: left; border-bottom: 1px solid var(--line); width: 100%;
+    }
+    .item-link strong { display: block; }
+    .item-link span { display: block; margin-top: 3px; color: var(--muted); font-size: 13px; }
+    .pill { display: inline-block; padding: 5px 10px; border-radius: 999px; background: #efe4d8; color: var(--accent); font-size: 12px; font-weight: 700; }
+    .pills { display: flex; flex-wrap: wrap; gap: 6px; }
+    .hidden { display: none; }
+    .record {
+      display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: baseline;
+      padding: 12px 0; border-bottom: 1px solid var(--line);
+    }
+    .footer-actions { margin-top: 24px; display: flex; flex-direction: column; gap: 4px; }
+    .footer-actions button { min-height: 40px; color: var(--muted); font-size: 14px; }
+    .empty { padding: 28px 8px; text-align: center; color: var(--muted); }
+    .choice {
+      width: 100%; text-align: left; padding: 12px 14px; border: 1px solid var(--line);
+      border-radius: 12px; background: var(--surface); min-height: 48px;
+    }
+    .choice.on { border-color: var(--accent); background: #efe4d8; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <main class="app" id="app"></main>
+  <script>
+(function () {
+  var STORAGE_KEY = "bakery-predict-practical-v1";
+  var WEEK = ["일", "월", "화", "수", "목", "금", "토"];
+
+  var ITEMS = [
+    { id: "white", name: "식빵", group: "식빵류", note: "비상스트레이트법" },
+    { id: "milk", name: "우유식빵", group: "식빵류", note: "우유 함량·색" },
+    { id: "corn", name: "옥수수식빵", group: "식빵류", note: "콘밀 배합" },
+    { id: "rye", name: "호밀빵", group: "식빵류", note: "호밀 비율" },
+    { id: "pullman", name: "풀만식빵", group: "식빵류", note: "뚜껑 타이밍" },
+    { id: "buttertop", name: "버터톱식빵", group: "식빵류", note: "버터 토핑" },
+    { id: "chestnut", name: "밤식빵", group: "식빵류", note: "밤 고르게" },
+    { id: "rice", name: "쌀식빵", group: "식빵류", note: "쌀가루 배합" },
+    { id: "ww", name: "통밀빵", group: "식빵류", note: "통밀 흡수" },
+    { id: "redbean", name: "단팥빵", group: "단과자빵", note: "앙금 밀봉" },
+    { id: "soboro", name: "소보로빵", group: "단과자빵", note: "소보로 크럼블" },
+    { id: "cream", name: "크림빵", group: "단과자빵", note: "충전 후 터짐" },
+    { id: "twist", name: "트위스트형 단과자빵", group: "단과자빵", note: "꼬임 균일" },
+    { id: "sweetroll", name: "스위트롤", group: "단과자빵", note: "말기·컷팅" },
+    { id: "butterroll", name: "버터롤", group: "단과자빵", note: "성형 결" },
+    { id: "mocha", name: "모카빵", group: "단과자빵", note: "모카 토핑" },
+    { id: "donut", name: "빵도넛", group: "특수빵", note: "튀김 온도" },
+    { id: "grissini", name: "그리시니", group: "특수빵", note: "가늘고 균일" },
+    { id: "bagel", name: "베이글", group: "특수빵", note: "데치기" },
+    { id: "sausage", name: "소시지빵", group: "특수빵", note: "감기·밀봉" }
+  ];
+
+  function uid() {
+    return crypto.randomUUID ? crypto.randomUUID() : "id-" + Date.now() + "-" + Math.random();
+  }
+
+  function pad(n) { return String(n).padStart(2, "0"); }
+
+  function todayStr() {
+    var d = new Date();
+    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+  }
+
+  function monthStr(d) {
+    return d.slice(0, 7);
+  }
+
+  function parseDate(str) {
+    var p = str.split("-").map(Number);
+    return new Date(p[0], p[1] - 1, p[2]);
+  }
+
+  function daysBetween(a, b) {
+    return Math.round((parseDate(b) - parseDate(a)) / 86400000);
+  }
+
+  function formatKor(str) {
+    var d = parseDate(str);
+    return d.getFullYear() + "." + pad(d.getMonth() + 1) + "." + pad(d.getDate()) + " (" + WEEK[d.getDay()] + ")";
+  }
+
+  function shiftMonth(ym, delta) {
+    var p = ym.split("-").map(Number);
+    var d = new Date(p[0], p[1] - 1 + delta, 1);
+    return d.getFullYear() + "-" + pad(d.getMonth() + 1);
+  }
+
+  function monthLabel(ym) {
+    var p = ym.split("-").map(Number);
+    return p[0] + "년 " + p[1] + "월";
+  }
+
+  function daysInMonth(ym) {
+    var p = ym.split("-").map(Number);
+    return new Date(p[0], p[1], 0).getDate();
+  }
+
+  function firstWeekday(ym) {
+    var p = ym.split("-").map(Number);
+    return new Date(p[0], p[1] - 1, 1).getDay();
+  }
+
+  var memoryStore = {};
+  function readStore(key) {
+    try { return localStorage.getItem(key); }
+    catch (e) { return Object.prototype.hasOwnProperty.call(memoryStore, key) ? memoryStore[key] : null; }
+  }
+  function writeStore(key, value) {
+    try { localStorage.setItem(key, value); }
+    catch (e) { memoryStore[key] = value; }
+  }
+
+  function defaultState() {
+    return { site: "시험장 1곳", records: [] };
+  }
+
+  function loadState() {
+    try {
+      var raw = readStore(STORAGE_KEY);
+      if (!raw) return defaultState();
+      var parsed = JSON.parse(raw);
+      if (!parsed.records) parsed.records = [];
+      if (!parsed.site) parsed.site = "시험장 1곳";
+      return parsed;
+    } catch (e) {
+      return defaultState();
+    }
+  }
+
+  function saveState() { writeStore(STORAGE_KEY, JSON.stringify(state)); }
+
+  function findItem(id) {
+    return ITEMS.find(function (item) { return item.id === id; });
+  }
+
+  function itemName(id) {
+    var item = findItem(id);
+    return item ? item.name : id;
+  }
+
+  var ITEM_ALIASES = {
+    "풀맨식빵": "pullman",
+    "모카번": "mocha",
+    "콘브레드": "corn",
+    "옥수수빵": "corn",
+    "화이트브레드": "white",
+    "비상스트레이트식빵": "white",
+    "식빵비상스트레이트법": "white",
+    "단과자빵소보로빵": "soboro",
+    "단과자빵크림빵": "cream",
+    "단과자빵트위스트형": "twist",
+    "트위스트": "twist",
+    "트위스트빵": "twist",
+    "소세지빵": "sausage",
+    "빵도너츠": "donut",
+    "도넛": "donut",
+    "도너츠": "donut"
+  };
+
+  function foldName(value) {
+    return String(value || "")
+      .replace(/\s+/g, "")
+      .replace(/[()[\]{}·.,]/g, "")
+      .replace(/빵류$/, "빵");
+  }
+
+  function resolveItem(name) {
+    var folded = foldName(name);
+    if (!folded) return null;
+    if (ITEM_ALIASES[folded]) return ITEM_ALIASES[folded];
+    var exact = ITEMS.find(function (item) { return foldName(item.name) === folded; });
+    if (exact) return exact.id;
+    var hits = ITEMS.filter(function (item) {
+      var n = foldName(item.name);
+      return n.indexOf(folded) !== -1 || folded.indexOf(n) !== -1;
+    });
+    if (hits.length === 1) return hits[0].id;
+    return null;
+  }
+
+  function parseLooseDate(value) {
+    var raw = String(value || "").trim();
+    var m = raw.match(/^(\d{4})[./-](\d{1,2})[./-](\d{1,2})$/);
+    if (!m) m = raw.match(/^(\d{4})(\d{2})(\d{2})$/);
+    if (!m) return "";
+    var y = Number(m[1]);
+    var mo = Number(m[2]);
+    var d = Number(m[3]);
+    if (mo < 1 || mo > 12 || d < 1 || d > 31) return "";
+    return y + "-" + pad(mo) + "-" + pad(d);
+  }
+
+  function parseSession(value) {
+    var raw = String(value || "").trim();
+    if (raw === "오전") return 1;
+    if (raw === "오후") return 2;
+    var m = raw.match(/(\d+)/);
+    if (!m) return 0;
+    var n = Number(m[1]);
+    return n >= 1 && n <= 9 ? n : 0;
+  }
+
+  function sessionList() {
+    var max = 3;
+    state.records.forEach(function (row) {
+      if (row.session > max) max = row.session;
+    });
+    var list = [];
+    var i;
+    for (i = 1; i <= max; i++) list.push(i);
+    return list;
+  }
+
+  function parseTxtRecords(text) {
+    var lines = String(text || "").replace(/^\uFEFF/, "").split(/\r?\n/);
+    var ok = [];
+    var errors = [];
+    var site = "";
+    lines.forEach(function (line, idx) {
+      var raw = line.trim();
+      if (!raw || raw.charAt(0) === "#" || raw.indexOf("//") === 0) return;
+      var siteMatch = raw.match(/^시험장\s*[:：]\s*(.+)$/);
+      if (siteMatch) {
+        site = siteMatch[1].trim();
+        return;
+      }
+      var parts = raw.split(/[,\t|]/).map(function (part) { return part.trim(); }).filter(Boolean);
+      var date = "";
+      var session = 0;
+      var itemText = "";
+      var note = "";
+      if (parts.length >= 3 && parseLooseDate(parts[0]) && parseSession(parts[1])) {
+        date = parseLooseDate(parts[0]);
+        session = parseSession(parts[1]);
+        itemText = parts[2];
+        note = parts.slice(3).join(" ");
+      } else {
+        var m = raw.match(/^(\d{4}[./-]\d{1,2}[./-]\d{1,2}|\d{8})\s+(\S+)\s+(.+)$/);
+        if (!m) {
+          errors.push((idx + 1) + "행: 형식을 읽지 못함");
+          return;
+        }
+        date = parseLooseDate(m[1]);
+        session = parseSession(m[2]);
+        var rest = m[3].trim();
+        var splitNote = rest.split(/\s{2,}|\s+\/\s+/);
+        itemText = splitNote[0];
+        note = splitNote.slice(1).join(" ");
+      }
+      var itemId = resolveItem(itemText);
+      if (!date) {
+        errors.push((idx + 1) + "행: 날짜 오류");
+        return;
+      }
+      if (!session) {
+        errors.push((idx + 1) + "행: 차수 오류");
+        return;
+      }
+      if (!itemId) {
+        errors.push((idx + 1) + "행: 품목 모름 (" + itemText + ")");
+        return;
+      }
+      ok.push({
+        id: uid(),
+        date: date,
+        session: session,
+        itemId: itemId,
+        note: note
+      });
+    });
+    return { records: ok, errors: errors, site: site };
+  }
+
+  function recordsToTxt() {
+    var lines = [
+      "# 시험장: " + state.site,
+      "# 형식: 날짜  차수  품목",
+      "# 예) 2026-09-01  1차  밤식빵"
+    ];
+    state.records.slice().sort(function (a, b) {
+      if (a.date === b.date) return a.session - b.session;
+      return a.date < b.date ? -1 : 1;
+    }).forEach(function (row) {
+      var line = row.date + "  " + row.session + "차  " + itemName(row.itemId);
+      if (row.note) line += "  " + row.note;
+      lines.push(line);
+    });
+    return lines.join("\n") + "\n";
+  }
+
+  function applyTxtImport(parsed, replaceAll) {
+    if (parsed.site) state.site = parsed.site;
+    if (replaceAll) state.records = [];
+    parsed.records.forEach(function (row) {
+      state.records = state.records.filter(function (cur) {
+        return !(cur.date === row.date && cur.session === row.session);
+      });
+      state.records.push(row);
+    });
+    saveState();
+  }
+
+  function downloadText(filename, text, type) {
+    var blob = new Blob([text], { type: type || "text/plain;charset=utf-8" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  function recordsOn(date) {
+    return state.records
+      .filter(function (row) { return row.date === date; })
+      .sort(function (a, b) { return a.session - b.session; });
+  }
+
+  function recordsInMonth(ym) {
+    return state.records
+      .filter(function (row) { return monthStr(row.date) === ym; })
+      .sort(function (a, b) {
+        if (a.date === b.date) return a.session - b.session;
+        return a.date < b.date ? -1 : 1;
+      });
+  }
+
+  function priorRecords(date, session) {
+    return state.records.filter(function (row) {
+      if (row.date < date) return true;
+      if (row.date === date && session && row.session !== session) return true;
+      return false;
+    });
+  }
+
+  function statsFor(itemId, date, session) {
+    var prior = priorRecords(date, session);
+    var hits = prior.filter(function (row) { return row.itemId === itemId; })
+      .sort(function (a, b) { return a.date < b.date ? 1 : -1; });
+    var last = hits[0] || null;
+    var ym = monthStr(date);
+    var monthHits = hits.filter(function (row) { return monthStr(row.date) === ym; }).length;
+    var recent30 = hits.filter(function (row) { return daysBetween(row.date, date) <= 30; }).length;
+    var sameDay = recordsOn(date).some(function (row) {
+      return row.itemId === itemId && (!session || row.session !== session);
+    });
+    var gap = last ? daysBetween(last.date, date) : null;
+    return {
+      last: last,
+      gap: gap,
+      total: hits.length,
+      monthHits: monthHits,
+      recent30: recent30,
+      sameDay: sameDay
+    };
+  }
+
+  function scoreItem(item, date, session) {
+    var s = statsFor(item.id, date, session);
+    if (s.sameDay) return { score: -9999, reason: "같은 날 다른 차수 출제", stats: s };
+    var score = 0;
+    if (s.gap == null) {
+      score += 80;
+    } else {
+      score += Math.min(s.gap, 120) * 1.2;
+      if (s.gap <= 7) score -= 40;
+      else if (s.gap <= 14) score -= 18;
+    }
+    if (s.monthHits === 0) score += 22;
+    else score -= s.monthHits * 10;
+    score -= s.recent30 * 14;
+    score += Math.max(0, 8 - s.total) * 3;
+    var reason;
+    if (s.sameDay) reason = "같은 날 출제됨";
+    else if (s.gap == null) reason = "이 시험장 미출제";
+    else reason = s.gap + "일 공백 · 이번 달 " + s.monthHits + "회";
+    return { score: score, reason: reason, stats: s };
+  }
+
+  function predict(date, session) {
+    var ranked = ITEMS.map(function (item) {
+      var result = scoreItem(item, date, session);
+      return {
+        item: item,
+        score: result.score,
+        reason: result.reason,
+        stats: result.stats
+      };
+    }).filter(function (row) { return row.score > -9000; })
+      .sort(function (a, b) { return b.score - a.score; });
+    var max = ranked.length ? ranked[0].score : 1;
+    var min = ranked.length ? ranked[ranked.length - 1].score : 0;
+    ranked.forEach(function (row) {
+      row.pct = max === min ? 100 : Math.round(((row.score - min) / (max - min)) * 100);
+    });
+    return ranked;
+  }
+
+  function parseHash() {
+    var raw = location.hash.replace(/^#/, "") || "/";
+    var split = raw.split("?");
+    var path = split[0];
+    var query = split[1] || "";
+    return {
+      parts: path.split("/").filter(Boolean),
+      params: new URLSearchParams(query)
+    };
+  }
+
+  function go(hash) { location.hash = hash; }
+
+  function tabBar(active) {
+    return '<nav class="tabbar">' +
+      '<button type="button" class="' + (active === "predict" ? "on" : "") + '" data-go="/">예상</button>' +
+      '<button type="button" class="' + (active === "month" ? "on" : "") + '" data-go="/month">월별</button>' +
+      '<button type="button" class="' + (active === "log" ? "on" : "") + '" data-go="/log">기록</button>' +
+      '<button type="button" class="' + (active === "items" ? "on" : "") + '" data-go="/items">품목</button>' +
+      "</nav>";
+  }
+
+  function sessionSwitch(date, selected, extra) {
+    extra = extra || "";
+    var buttons = ['<button type="button" class="' + (!selected ? "on" : "") + '" data-go="/day/' + date + extra + '">전체</button>'];
+    sessionList().forEach(function (n) {
+      buttons.push(
+        '<button type="button" class="' + (String(selected) === String(n) ? "on" : "") + '" data-go="/day/' + date + "?s=" + n + extra + '">' + n + "차</button>"
+      );
+    });
+    return '<div class="switch">' + buttons.join("") + "</div>";
+  }
+
+  function escapeHtml(value) {
+    return String(value == null ? "" : value)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  var root = document.getElementById("app");
+  var state = loadState();
+  saveState();
+  var draft = null;
+
+  function bindNav() {
+    root.querySelectorAll("[data-go]").forEach(function (el) {
+      el.addEventListener("click", function () { go(el.getAttribute("data-go")); });
+    });
+  }
+
+  function renderHome() {
+    var date = todayStr();
+    var ranked = predict(date, null);
+    var monthRows = recordsInMonth(monthStr(date));
+    var unique = {};
+    monthRows.forEach(function (row) { unique[row.itemId] = true; });
+    var top = ranked.slice(0, 5);
+    root.innerHTML =
+      '<div class="topbar"><span class="ghost"></span><h1>일자별 예상</h1><button class="ghost" data-go="/settings">시험장</button></div>' +
+      '<p class="site">' + escapeHtml(state.site) + " · 제빵 실기만</p>" +
+      '<div class="stats">' +
+        '<div class="card"><small>오늘</small><strong>' + date.slice(8) + "일</strong></div>" +
+        '<div class="card"><small>이번 달 기록</small><strong>' + monthRows.length + "</strong></div>" +
+        '<div class="card"><small>이번 달 품목</small><strong>' + Object.keys(unique).length + "</strong></div>" +
+      "</div>" +
+      '<p class="lede">이 시험장 기출 공백과 월별 빈도로 오늘 출제 가능성이 높은 제빵 품목입니다. 공식 발표가 아닙니다.</p>' +
+      (state.records.length ? renderRankList(top) : '<div class="empty card">아직 기출이 없습니다. 시험장 차수 기록을 넣으면 예상이 생깁니다.</div>') +
+      '<button class="btn btn-primary" data-go="/day/' + date + '">오늘 자세히</button>' +
+      '<button class="btn btn-secondary" data-go="/new">기출 입력</button>' +
+      tabBar("predict");
+    bindNav();
+  }
+
+  function renderRankList(rows) {
+    if (!rows.length) return '<div class="empty card">같은 날 이미 나온 품목을 제외하면 남은 후보가 없습니다.</div>';
+    return '<div class="card">' + rows.map(function (row, i) {
+      return '<div class="rank">' +
+        '<div class="num' + (i > 2 ? " dim" : "") + '">' + (i + 1) + "</div>" +
+        "<div><strong>" + escapeHtml(row.item.name) + "</strong><small>" + escapeHtml(row.reason) + '</small>' +
+        '<div class="bar"><i style="width:' + row.pct + '%"></i></div></div>' +
+        '<span class="pill">' + escapeHtml(row.item.group) + "</span>" +
+        "</div>";
+    }).join("") + "</div>";
+  }
+
+  function renderDay() {
+    var parsed = parseHash();
+    var date = parsed.parts[1] || todayStr();
+    var session = parsed.params.get("s");
+    var actual = recordsOn(date);
+    var ranked = predict(date, session ? Number(session) : null);
+    var top = ranked.slice(0, 8);
+    var actualHtml = actual.length
+      ? '<div class="card">' + actual.map(function (row) {
+          return '<div class="record"><div><strong>' + row.session + "차 · " + escapeHtml(itemName(row.itemId)) + "</strong>" +
+            (row.note ? '<div class="muted">' + escapeHtml(row.note) + "</div>" : "") +
+            '</div><button class="ghost" data-go="/edit/' + row.id + '">수정</button></div>';
+        }).join("") + "</div>"
+      : '<p class="muted">이 날짜 확정 기출은 아직 없습니다.</p>';
+
+    root.innerHTML =
+      '<div class="topbar"><button class="ghost" data-go="/">닫기</button><h2>일자 예상</h2><button class="ghost" data-go="/new?date=' + date + '">입력</button></div>' +
+      '<p class="site">' + escapeHtml(state.site) + "</p>" +
+      '<div class="field"><span>날짜</span><input id="day-date" type="date" value="' + date + '"></div>' +
+      '<p class="lede" style="margin-top:12px">' + formatKor(date) + " · 차수를 고르면 같은 날 다른 차수 기출은 제외합니다.</p>" +
+      sessionSwitch(date, session) +
+      '<p class="section-title">확정 기출</p>' + actualHtml +
+      '<p class="section-title">출제 예상</p>' +
+      renderRankList(top) +
+      tabBar("predict");
+    bindNav();
+    document.getElementById("day-date").addEventListener("change", function () {
+      go("/day/" + this.value + (session ? "?s=" + session : ""));
+    });
+  }
+
+  function renderMonth() {
+    var parsed = parseHash();
+    var ym = parsed.parts[1] || monthStr(todayStr());
+    var rows = recordsInMonth(ym);
+    var byDate = {};
+    rows.forEach(function (row) {
+      if (!byDate[row.date]) byDate[row.date] = [];
+      byDate[row.date].push(row);
+    });
+    var used = {};
+    rows.forEach(function (row) { used[row.itemId] = true; });
+    var missing = ITEMS.filter(function (item) { return !used[item.id]; });
+    var start = firstWeekday(ym);
+    var count = daysInMonth(ym);
+    var cells = [];
+    var i;
+    for (i = 0; i < start; i++) cells.push('<button class="day empty" type="button"></button>');
+    for (i = 1; i <= count; i++) {
+      var date = ym + "-" + pad(i);
+      var has = byDate[date];
+      var cls = "day" + (has ? " on" : "") + (date === todayStr() ? " today" : "");
+      cells.push(
+        '<button class="' + cls + '" type="button" data-go="/day/' + date + '"><b>' + i + "</b>" +
+        (has ? '<span class="dot"></span>' : "") + "</button>"
+      );
+    }
+
+    root.innerHTML =
+      '<div class="topbar"><span class="ghost"></span><h1>월별 기출</h1><button class="ghost" data-go="/settings">시험장</button></div>' +
+      '<p class="site">' + escapeHtml(state.site) + "</p>" +
+      '<div class="cal-head">' +
+        '<button class="ghost" data-go="/month/' + shiftMonth(ym, -1) + '">이전</button>' +
+        "<h2>" + monthLabel(ym) + "</h2>" +
+        '<button class="ghost" data-go="/month/' + shiftMonth(ym, 1) + '">다음</button>' +
+      "</div>" +
+      '<div class="stats">' +
+        '<div class="card"><small>차수 기록</small><strong>' + rows.length + "</strong></div>" +
+        '<div class="card"><small>출제 품목</small><strong>' + Object.keys(used).length + "</strong></div>" +
+        '<div class="card"><small>미출제</small><strong>' + missing.length + "</strong></div>" +
+      "</div>" +
+      '<div class="week">' + WEEK.map(function (w) { return "<span>" + w + "</span>"; }).join("") + "</div>" +
+      '<div class="days">' + cells.join("") + "</div>" +
+      '<p class="section-title">이번 달 나온 품목</p>' +
+      (Object.keys(used).length
+        ? '<div class="pills">' + Object.keys(used).map(function (id) { return '<span class="pill">' + escapeHtml(itemName(id)) + "</span>"; }).join("") + "</div>"
+        : '<p class="muted">이달 기록이 없습니다.</p>') +
+      '<p class="section-title">이번 달 아직 안 나온 품목</p>' +
+      (missing.length
+        ? '<div class="pills">' + missing.map(function (item) { return '<span class="pill">' + escapeHtml(item.name) + "</span>"; }).join("") + "</div>"
+        : '<p class="muted">이달 공개 20종이 모두 한 번 이상 나왔습니다.</p>') +
+      '<p class="section-title">차수 기록</p>' +
+      (rows.length ? '<div class="card">' + rows.map(function (row) {
+        return '<div class="record"><div><strong>' + row.date.slice(8) + "일 " + row.session + "차</strong>" +
+          '<div class="muted">' + escapeHtml(itemName(row.itemId)) + "</div></div>" +
+          '<button class="ghost" data-go="/edit/' + row.id + '">수정</button></div>';
+      }).join("") + "</div>" : '<div class="empty card">이달 차수 기록이 없습니다.</div>') +
+      tabBar("month");
+    bindNav();
+  }
+
+  function renderLog() {
+    var rows = state.records.slice().sort(function (a, b) {
+      if (a.date === b.date) return b.session - a.session;
+      return a.date < b.date ? 1 : -1;
+    });
+    root.innerHTML =
+      '<div class="topbar"><span class="ghost"></span><h1>기출 기록</h1><button class="ghost" data-go="/new">추가</button></div>' +
+      '<p class="lede">' + escapeHtml(state.site) + "의 일자·차수·품목만 이 기기에 저장됩니다.</p>" +
+      (rows.length ? '<div class="card">' + rows.map(function (row) {
+        return '<button class="item-link" data-go="/edit/' + row.id + '"><div><strong>' + formatKor(row.date) + " · " + row.session + "차</strong><span>" +
+          escapeHtml(itemName(row.itemId)) + '</span></div><span class="pill">수정</span></button>';
+      }).join("") + "</div>" : '<div class="empty card">메모장 TXT로 한 번에 넣거나, 시험 후 차수를 직접 입력하면 됩니다.</div>') +
+      '<button class="btn btn-primary" data-go="/new">한 건 입력</button>' +
+      '<button class="btn btn-secondary" data-go="/upload">TXT 일괄 넣기</button>' +
+      tabBar("log");
+    bindNav();
+  }
+
+  function renderItems() {
+    var date = todayStr();
+    var ranked = predict(date, null);
+    var byId = {};
+    ranked.forEach(function (row, i) { byId[row.item.id] = { rank: i + 1, row: row }; });
+    var groups = ["식빵류", "단과자빵", "특수빵"];
+    root.innerHTML =
+      '<div class="topbar"><span class="ghost"></span><h1>제빵 품목</h1><span class="ghost"></span></div>' +
+      '<p class="lede">2026 실기 공개과제 20종 기준입니다. 공백이 길수록 오늘 예상 순위가 올라갑니다.</p>' +
+      groups.map(function (group) {
+        var list = ITEMS.filter(function (item) { return item.group === group; });
+        return '<p class="section-title">' + group + '</p><div class="card">' + list.map(function (item) {
+          var info = byId[item.id];
+          var s = info ? info.row.stats : statsFor(item.id, date, null);
+          var last = s.last ? s.last.date : "기록 없음";
+          return '<div class="item-link"><div><strong>' + escapeHtml(item.name) + "</strong><span>" +
+            escapeHtml(item.note) + " · 최근 " + last + " · 누적 " + s.total + "회</span></div>" +
+            '<span class="pill">' + (info ? info.rank + "위" : "-") + "</span></div>";
+        }).join("") + "</div>";
+      }).join("") +
+      tabBar("items");
+    bindNav();
+  }
+
+  function editorState(existing) {
+    if (existing) {
+      return {
+        id: existing.id,
+        date: existing.date,
+        session: existing.session,
+        itemId: existing.itemId,
+        note: existing.note || ""
+      };
+    }
+    var parsed = parseHash();
+    return {
+      id: uid(),
+      date: parsed.params.get("date") || todayStr(),
+      session: 1,
+      itemId: ITEMS[0].id,
+      note: ""
+    };
+  }
+
+  function renderEditor(isNew) {
+    var parsed = parseHash();
+    var existing = isNew ? null : state.records.find(function (row) { return row.id === parsed.parts[1]; });
+    if (!isNew && !existing) {
+      go("/log");
+      return;
+    }
+    if (!draft || draft._mode !== (isNew ? "new" : existing.id)) {
+      draft = Object.assign(editorState(existing), { _mode: isNew ? "new" : existing.id });
+    }
+    var dup = state.records.find(function (row) {
+      return row.date === draft.date && row.session === Number(draft.session) && row.id !== draft.id;
+    });
+    root.innerHTML =
+      '<div class="topbar"><button class="ghost" data-go="/log">닫기</button><h2>' + (isNew ? "기출 입력" : "기출 수정") + '</h2><span class="ghost"></span></div>' +
+      '<p class="lede">' + escapeHtml(state.site) + " · 한 차수에 제빵 품목 하나</p>" +
+      '<div class="stack">' +
+        '<label class="field"><span>시험일</span><input id="f-date" type="date" value="' + draft.date + '"></label>' +
+        '<label class="field"><span>차수</span><select id="f-session">' +
+          sessionList().map(function (n) {
+            return '<option value="' + n + '"' + (Number(draft.session) === n ? " selected" : "") + ">" + n + "차</option>";
+          }).join("") + "</select></label>" +
+        '<div class="field"><span>출제 품목</span><div class="stack" id="f-items">' +
+          ITEMS.map(function (item) {
+            return '<button type="button" class="choice' + (draft.itemId === item.id ? " on" : "") + '" data-item="' + item.id + '">' +
+              escapeHtml(item.name) + " · " + escapeHtml(item.group) + "</button>";
+          }).join("") + "</div></div>" +
+        '<label class="field"><span>메모</span><input id="f-note" type="text" maxlength="80" placeholder="감독 전달, 배합 특이사항" value="' + escapeHtml(draft.note) + '"></label>' +
+      "</div>" +
+      (dup ? '<p class="warn">같은 날짜·차수 기록이 이미 있습니다. 저장하면 그 기록을 덮습니다.</p>' : "") +
+      '<button class="btn btn-primary" id="save">저장</button>' +
+      (isNew ? "" : '<button class="btn btn-danger" id="del">삭제</button>') +
+      tabBar("log");
+    bindNav();
+    document.getElementById("f-date").addEventListener("change", function () { draft.date = this.value; renderEditor(isNew); });
+    document.getElementById("f-session").addEventListener("change", function () { draft.session = Number(this.value); renderEditor(isNew); });
+    document.getElementById("f-note").addEventListener("input", function () { draft.note = this.value; });
+    document.getElementById("f-items").addEventListener("click", function (e) {
+      var btn = e.target.closest("[data-item]");
+      if (!btn) return;
+      draft.itemId = btn.getAttribute("data-item");
+      renderEditor(isNew);
+    });
+    document.getElementById("save").addEventListener("click", function () {
+      if (!draft.date || !draft.itemId) return;
+      state.records = state.records.filter(function (row) {
+        if (row.id === draft.id) return false;
+        if (row.date === draft.date && row.session === Number(draft.session)) return false;
+        return true;
+      });
+      state.records.push({
+        id: draft.id,
+        date: draft.date,
+        session: Number(draft.session),
+        itemId: draft.itemId,
+        note: (draft.note || "").trim()
+      });
+      var savedDate = draft.date;
+      saveState();
+      draft = null;
+      go("/day/" + savedDate);
+    });
+    var del = document.getElementById("del");
+    if (del) {
+      del.addEventListener("click", function () {
+        if (!confirm("이 차수 기록을 지울까요?")) return;
+        state.records = state.records.filter(function (row) { return row.id !== draft.id; });
+        saveState();
+        draft = null;
+        go("/log");
+      });
+    }
+  }
+
+  function renderUpload() {
+    root.innerHTML =
+      '<div class="topbar"><button class="ghost" data-go="/log">닫기</button><h2>TXT 일괄</h2><span class="ghost"></span></div>' +
+      '<p class="lede">날짜, 차수, 품목을 한 줄에 하나씩 넣습니다. 같은 날짜·차수는 덮어씁니다.</p>' +
+      '<p class="section-title">형식</p>' +
+      '<pre class="sample">시험장: 서울북부\n2026-09-01  1차  밤식빵\n2026-09-01  2차  소보로빵\n2026.09.03,1,우유식빵</pre>' +
+      '<label class="field" style="margin-top:16px"><span>붙여넣기</span>' +
+      '<textarea id="bulk" placeholder="여기에 붙여넣거나 아래에서 TXT를 고르세요"></textarea></label>' +
+      '<label class="btn btn-secondary" for="txt-file">TXT 파일 선택</label>' +
+      '<input id="txt-file" class="hidden" type="file" accept=".txt,.csv,text/plain">' +
+      '<label class="lede" style="display:flex;align-items:center;gap:8px;margin-top:12px">' +
+      '<input id="replace" type="checkbox"> 기존 기록을 지우고 이 내용만 남기기</label>' +
+      '<button class="btn btn-primary" id="apply">반영</button>' +
+      '<button class="btn btn-secondary" id="sample">빈 양식 받기</button>' +
+      '<p class="section-title">결과</p>' +
+      '<div id="result" class="muted">아직 반영하지 않았습니다.</div>' +
+      tabBar("log");
+    bindNav();
+    function fillFromFile(file) {
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function () { document.getElementById("bulk").value = reader.result; };
+      reader.readAsText(file, "utf-8");
+    }
+    document.getElementById("txt-file").addEventListener("change", function () {
+      fillFromFile(this.files && this.files[0]);
+    });
+    document.getElementById("sample").addEventListener("click", function () {
+      downloadText("기출_양식.txt",
+        "# 시험장: " + state.site + "\n" +
+        "# 한 줄에 날짜, 차수, 품목. #으로 시작하는 줄은 무시됩니다.\n" +
+        "# 2026-09-01  1차  밤식빵\n" +
+        "# 2026-09-01  2차  소보로빵\n");
+    });
+    document.getElementById("apply").addEventListener("click", function () {
+      var parsed = parseTxtRecords(document.getElementById("bulk").value);
+      var box = document.getElementById("result");
+      if (!parsed.records.length && !parsed.errors.length) {
+        box.innerHTML = '<p class="warn">넣을 줄이 없습니다.</p>';
+        return;
+      }
+      if (parsed.records.length) applyTxtImport(parsed, document.getElementById("replace").checked);
+      box.innerHTML =
+        (parsed.records.length ? '<p class="ok">' + parsed.records.length + "건 반영</p>" : "") +
+        (parsed.errors.length
+          ? '<p class="warn">건너뛴 줄</p><p class="muted">' + parsed.errors.map(escapeHtml).join("<br>") + "</p>"
+          : '<p class="muted">오류 없음</p>') +
+        (parsed.records.length ? '<button class="btn btn-secondary" data-go="/log">기록 보기</button>' : "");
+      bindNav();
+    });
+  }
+
+  function renderSettings() {
+    root.innerHTML =
+      '<div class="topbar"><button class="ghost" data-go="/">닫기</button><h2>시험장</h2><span class="ghost"></span></div>' +
+      '<p class="lede">회사 PC에서는 이 브라우저에만 저장됩니다. GitHub나 외부 서버로 보내지 않습니다.</p>' +
+      '<label class="field"><span>시험장 이름</span><input id="site" type="text" maxlength="40" value="' + escapeHtml(state.site) + '"></label>' +
+      '<button class="btn btn-primary" id="save-site">이름 저장</button>' +
+      '<p class="section-title">기출 TXT</p>' +
+      '<p class="muted">메모장에서 모아 둔 기출을 올리거나, 지금 기록을 TXT로 받습니다.</p>' +
+      '<button class="btn btn-secondary" data-go="/upload">TXT 일괄 넣기</button>' +
+      '<button class="btn btn-secondary" id="export-txt">기출 TXT로 받기</button>' +
+      '<p class="section-title">백업 JSON</p>' +
+      '<p class="muted">이 브라우저 안 복사본입니다. GitHub 연결 없음.</p>' +
+      '<button class="btn btn-secondary" id="export">JSON 내보내기</button>' +
+      '<label class="btn btn-secondary" for="import">JSON 가져오기</label>' +
+      '<input id="import" class="hidden" type="file" accept="application/json">' +
+      '<div class="footer-actions"><button type="button" id="reset">모든 기록 지우기</button></div>' +
+      tabBar("predict");
+    bindNav();
+    document.getElementById("save-site").addEventListener("click", function () {
+      var name = document.getElementById("site").value.trim() || "시험장 1곳";
+      state.site = name;
+      saveState();
+      go("/");
+    });
+    document.getElementById("export-txt").addEventListener("click", function () {
+      downloadText("기출_" + state.site + ".txt", recordsToTxt());
+    });
+    document.getElementById("export").addEventListener("click", function () {
+      var blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "bakery-predict-local.json";
+      a.click();
+      URL.revokeObjectURL(a.href);
+    });
+    document.getElementById("import").addEventListener("change", function () {
+      var file = this.files && this.files[0];
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function () {
+        try {
+          var parsed = JSON.parse(reader.result);
+          if (!parsed || !Array.isArray(parsed.records)) throw new Error("format");
+          state.site = parsed.site || state.site;
+          state.records = parsed.records;
+          saveState();
+          go("/");
+        } catch (e) {
+          alert("가져올 수 없는 파일입니다.");
+        }
+      };
+      reader.readAsText(file);
+    });
+    document.getElementById("reset").addEventListener("click", function () {
+      if (!confirm("시험장 기록과 예상이 모두 지워집니다.")) return;
+      state = defaultState();
+      saveState();
+      go("/");
+    });
+  }
+
+  function render() {
+    var parts = parseHash().parts;
+    if (parts[0] === "month") return renderMonth();
+    if (parts[0] === "day") return renderDay();
+    if (parts[0] === "log") { draft = null; return renderLog(); }
+    if (parts[0] === "upload") { draft = null; return renderUpload(); }
+    if (parts[0] === "items") { draft = null; return renderItems(); }
+    if (parts[0] === "settings") { draft = null; return renderSettings(); }
+    if (parts[0] === "new") return renderEditor(true);
+    if (parts[0] === "edit") return renderEditor(false);
+    draft = null;
+    renderHome();
+  }
+
+  window.addEventListener("hashchange", render);
+  render();
+})();
+  </script>
+</body>
+</html>
