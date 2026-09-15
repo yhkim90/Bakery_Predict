@@ -7,12 +7,14 @@
   <meta name="apple-mobile-web-app-title" content="제빵 실기 예상">
   <meta name="theme-color" content="#5C4033">
   <title>제빵 실기 예상</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
   <style>
     :root {
       --bg: #f6f1ea;
       --surface: #fffcf7;
-      --text: #3d2b22;
-      --muted: #8a7364;
+      --text: #2b1c16;
+      --muted: #7a6254;
       --accent: #5c4033;
       --line: #e6d9cc;
       --danger: #9a3b2f;
@@ -20,6 +22,7 @@
       --warn: #8a5a20;
       --radius: 16px;
       --tap: 44px;
+      --font: "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
     }
     * { box-sizing: border-box; }
     html, body {
@@ -27,14 +30,19 @@
       min-height: 100%;
       background: var(--bg);
       color: var(--text);
-      font-family: "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+      font-family: var(--font);
       font-size: 17px;
       line-height: 1.45;
+      -webkit-font-smoothing: antialiased;
     }
     body {
       padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
     }
-    button, input, select, textarea { font: inherit; color: inherit; }
+    button, input, select, textarea {
+      font-family: var(--font);
+      font-size: inherit;
+      color: var(--text);
+    }
     button { appearance: none; border: 0; background: none; padding: 0; cursor: pointer; }
     .app { width: min(430px, 100%); margin: 0 auto; padding: 8px 20px 108px; }
     .tabbar {
@@ -72,14 +80,61 @@
     .field span, .section-title { color: var(--muted); font-size: 13px; font-weight: 700; }
     .section-title { margin: 18px 0 8px; }
     input[type="text"], input[type="date"], input[type="month"], input[type="number"], input[type="file"], select, textarea {
-      width: 100%; min-height: var(--tap); padding: 10px 12px;
-      border: 1px solid var(--line); border-radius: 12px; background: var(--surface);
+      width: 100%; min-width: 0; min-height: 48px; padding: 10px 14px;
+      border: 1px solid #d9c9ba; border-radius: 12px; background: #fff;
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 17px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      -webkit-text-fill-color: var(--text);
+      opacity: 1;
     }
-    .date-row {
-      display: grid; grid-template-columns: 48px 1fr 48px; gap: 8px;
-      align-items: center; margin-bottom: 12px;
+    input[type="date"], input[type="number"], input[type="month"] {
+      font-variant-numeric: tabular-nums;
+      font-feature-settings: "tnum" 1;
+      letter-spacing: 0.02em;
+      color: var(--accent);
+      -webkit-text-fill-color: var(--accent);
     }
-    .date-row .ghost { min-width: 48px; }
+    input[type="date"]::-webkit-datetime-edit,
+    input[type="date"]::-webkit-datetime-edit-fields-wrapper,
+    input[type="date"]::-webkit-datetime-edit-text,
+    input[type="date"]::-webkit-datetime-edit-year-field,
+    input[type="date"]::-webkit-datetime-edit-month-field,
+    input[type="date"]::-webkit-datetime-edit-day-field,
+    input[type="date"]::-webkit-date-and-time-value {
+      color: var(--accent);
+      -webkit-text-fill-color: var(--accent);
+      font-family: var(--font);
+      font-weight: 700;
+      font-size: 17px;
+      letter-spacing: 0.03em;
+      padding: 0;
+    }
+    .date-nav {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0 0 8px;
+    }
+    .date-nav .ghost {
+      min-width: 0; width: 100%; background: #efe4d8; border-radius: 12px;
+      font-weight: 700; color: var(--accent);
+    }
+    .date-wrap { position: relative; margin: 0 0 12px; }
+    .date-wrap input[type="date"] {
+      display: block; width: 100%; min-width: 0; padding-right: 44px; position: relative;
+    }
+    .date-wrap .cal-ico {
+      position: absolute; right: 12px; top: 0; bottom: 0; width: 22px;
+      display: flex; align-items: center; pointer-events: none; color: var(--accent);
+    }
+    .date-wrap .cal-ico svg {
+      width: 22px; height: 22px; fill: none; stroke: currentColor;
+      stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+    }
+    .date-wrap input[type="date"]::-webkit-calendar-picker-indicator {
+      opacity: 0; position: absolute; right: 0; top: 0; width: 44px; height: 100%;
+      margin: 0; padding: 0; cursor: pointer;
+    }
     textarea { min-height: 180px; resize: vertical; line-height: 1.5; }
     .sample {
       margin: 0; padding: 12px 14px; border-radius: 12px; background: #efe4d8;
@@ -552,12 +607,8 @@
       });
   }
 
-  function priorRecords(date, session) {
-    return state.records.filter(function (row) {
-      if (row.date < date) return true;
-      if (row.date === date && session && row.session !== session) return true;
-      return false;
-    });
+  function priorRecords(date) {
+    return state.records.filter(function (row) { return row.date < date; });
   }
 
   function uniqueSortedDates(rows) {
@@ -732,7 +783,7 @@
   }
 
   function buildPredictContext(date, session) {
-    var prior = priorRecords(date, session).slice().sort(function (a, b) {
+    var prior = priorRecords(date).slice().sort(function (a, b) {
       return a.date < b.date ? -1 : 1;
     });
     var examPrior = prior.filter(function (row) { return isExamItemId(row.itemId); });
@@ -793,7 +844,6 @@
     ctx = ctx || buildPredictContext(date, session);
     var s = statsFor(item.id, date, session, ctx);
     if (item.skip) return { score: -9999, reason: "", stats: s };
-    if (s.sameDay) return { score: -9999, reason: "이 날짜 확정", stats: s };
 
     var centerDates = ctx.datesByItem[item.id] || [];
     var daysSince = centerDates.length ? Math.max(0, daysBetween(centerDates[centerDates.length - 1], date)) : 35;
@@ -1018,6 +1068,19 @@
       "</nav>";
   }
 
+  function dateFieldHtml(id, date) {
+    return '<div class="date-nav">' +
+      '<button class="ghost" type="button" id="prev-day">이전</button>' +
+      '<button class="ghost" type="button" id="next-day">다음</button>' +
+      "</div>" +
+      '<div class="date-wrap">' +
+        '<input id="' + id + '" type="date" value="' + date + '">' +
+        '<span class="cal-ico" aria-hidden="true">' +
+          '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2.5"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>' +
+        "</span>" +
+      "</div>";
+  }
+
   function escapeHtml(value) {
     return String(value == null ? "" : value)
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -1061,11 +1124,7 @@
       '<div class="topbar"><span class="ghost"></span><h1>일자별 예상</h1><button class="ghost" data-go="/settings">시험장</button></div>' +
       '<p class="site">' + escapeHtml(state.site) + " · 제빵 실기 · " + year + "년 " + (latest ? sessionLabel(latest) : "") + "</p>" +
       '<div class="field"><span>조회 날짜</span></div>' +
-      '<div class="date-row">' +
-        '<button class="ghost" type="button" id="prev-day">이전</button>' +
-        '<input id="home-date" type="date" value="' + date + '">' +
-        '<button class="ghost" type="button" id="next-day">다음</button>' +
-      "</div>" +
+      dateFieldHtml("home-date", date) +
       '<label class="field"><span>회차</span><input id="home-round" type="number" min="1" max="366" value="' + roundNo + '"></label>' +
       '<p class="lede" style="margin-top:12px">' + formatKor(date) + "</p>" +
       '<div class="stats">' +
@@ -1147,11 +1206,7 @@
       '<div class="topbar"><button class="ghost" data-go="' + lastPredictPath + '">닫기</button><h2>일자 예상</h2><button class="ghost" data-go="/new?date=' + date + '">입력</button></div>' +
       '<p class="site">' + escapeHtml(state.site) + " · 같은 회차에 시험일 여러 날</p>" +
       '<div class="field"><span>날짜</span></div>' +
-      '<div class="date-row">' +
-        '<button class="ghost" type="button" id="prev-day">이전</button>' +
-        '<input id="day-date" type="date" value="' + date + '">' +
-        '<button class="ghost" type="button" id="next-day">다음</button>' +
-      "</div>" +
+      dateFieldHtml("day-date", date) +
       '<label class="field" style="margin-top:12px"><span>회차</span><input id="day-round" type="number" min="1" max="366" value="' + session + '"></label>' +
       '<p class="lede" style="margin-top:12px">' + formatKor(date) + " · " + sessionLabel(session) + " · 시험일 " + roundRows.length + "날</p>" +
       '<p class="section-title">이 날짜</p>' + actualHtml +
