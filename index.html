@@ -71,10 +71,15 @@
     .field { display: flex; flex-direction: column; gap: 6px; }
     .field span, .section-title { color: var(--muted); font-size: 13px; font-weight: 700; }
     .section-title { margin: 18px 0 8px; }
-    input[type="text"], input[type="date"], input[type="month"], input[type="file"], select, textarea {
+    input[type="text"], input[type="date"], input[type="month"], input[type="number"], input[type="file"], select, textarea {
       width: 100%; min-height: var(--tap); padding: 10px 12px;
       border: 1px solid var(--line); border-radius: 12px; background: var(--surface);
     }
+    .date-row {
+      display: grid; grid-template-columns: 48px 1fr 48px; gap: 8px;
+      align-items: center; margin-bottom: 12px;
+    }
+    .date-row .ghost { min-width: 48px; }
     textarea { min-height: 180px; resize: vertical; line-height: 1.5; }
     .sample {
       margin: 0; padding: 12px 14px; border-radius: 12px; background: #efe4d8;
@@ -115,6 +120,7 @@
     }
     .day.on { background: var(--surface); border: 1px solid var(--line); }
     .day.today { outline: 2px solid var(--accent); }
+    .day.pick { background: #efe4d8; }
     .day.empty { visibility: hidden; }
     .day b { font-size: 13px; }
     .dot { width: 6px; height: 6px; border-radius: 99px; background: var(--accent); }
@@ -197,6 +203,59 @@
 
   function daysBetween(a, b) {
     return Math.round((parseDate(b) - parseDate(a)) / 86400000);
+  }
+
+  function shiftDate(date, delta) {
+    var d = parseDate(date);
+    d.setDate(d.getDate() + delta);
+    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+  }
+
+  function weekdayOf(date) {
+    return parseDate(date).getDay();
+  }
+
+  function familyOf(name) {
+    var n = String(name || "");
+    if (n.indexOf("식빵") !== -1 || n.indexOf("풀만") !== -1 || n.indexOf("우유") !== -1 || n.indexOf("비상") !== -1) return "식빵";
+    if (n.indexOf("호밀") !== -1 || n.indexOf("통밀") !== -1 || n.indexOf("베이글") !== -1 || n.indexOf("그리시니") !== -1) return "하드";
+    if (n.indexOf("크림") !== -1 || n.indexOf("단팥") !== -1 || n.indexOf("스위트") !== -1 || n.indexOf("모카") !== -1 ||
+        n.indexOf("소보로") !== -1 || n.indexOf("트위스트") !== -1 || n.indexOf("소시지") !== -1 || n.indexOf("롤") !== -1 ||
+        n.indexOf("도넛") !== -1 || n.indexOf("도너츠") !== -1) return "단과자";
+    return "기타";
+  }
+
+  function clamp(v, min, max) {
+    if (min == null) min = 0;
+    if (max == null) max = 100;
+    return Math.max(min, Math.min(max, v));
+  }
+
+  function mean(arr) {
+    if (!arr.length) return 0;
+    var s = 0;
+    var i;
+    for (i = 0; i < arr.length; i++) s += arr[i];
+    return s / arr.length;
+  }
+
+  function stdev(arr, avg) {
+    if (arr.length < 2) return Math.max(avg * 0.45, 1);
+    var s = 0;
+    var i;
+    for (i = 0; i < arr.length; i++) s += (arr[i] - avg) * (arr[i] - avg);
+    return Math.sqrt(s / (arr.length - 1));
+  }
+
+  function gaussian(x, mu, sigma) {
+    if (!sigma) return 0.5;
+    var z = (x - mu) / sigma;
+    return Math.exp(-0.5 * z * z);
+  }
+
+  function isExamItemId(id) {
+    var item = findItem(id);
+    return !!(item && !item.skip);
   }
 
   function formatKor(str) {
@@ -501,69 +560,412 @@
     });
   }
 
-  function statsFor(itemId, date, session) {
-    var prior = priorRecords(date, session);
-    var hits = prior.filter(function (row) { return row.itemId === itemId; })
-      .sort(function (a, b) { return a.date < b.date ? 1 : -1; });
-    var last = hits[0] || null;
-    var ym = monthStr(date);
-    var monthHits = hits.filter(function (row) { return monthStr(row.date) === ym; }).length;
-    var recent30 = hits.filter(function (row) { return daysBetween(row.date, date) <= 30; }).length;
-    var roundHits = session
-      ? hits.filter(function (row) {
-          return yearOf(row.date) === yearOf(date) && Number(row.session) === Number(session);
-        }).length
-      : 0;
-    var roundLast = session
-      ? hits.find(function (row) {
-          return yearOf(row.date) === yearOf(date) && Number(row.session) === Number(session);
-        })
-      : null;
-    var sameDay = recordsOn(date).some(function (row) {
-      return row.itemId === itemId;
+  function uniqueSortedDates(rows) {
+    var seen = {};
+    var out = [];
+    rows.forEach(function (row) {
+      if (seen[row.date]) return;
+      seen[row.date] = true;
+      out.push(row.date);
     });
-    var gap = last ? daysBetween(last.date, date) : null;
+    out.sort();
+    return out;
+  }
+
+  function countSessionsBetween(dates, afterExclusive, beforeExclusive) {
+    var n = 0;
+    var i;
+    for (i = 0; i < dates.length; i++) {
+      if (dates[i] <= afterExclusive) continue;
+      if (dates[i] >= beforeExclusive) break;
+      n += 1;
+    }
+    return n;
+  }
+
+  function countSessionsAfter(dates, afterExclusive) {
+    var n = 0;
+    var i;
+    for (i = 0; i < dates.length; i++) {
+      if (dates[i] > afterExclusive) n += 1;
+    }
+    return n;
+  }
+
+  function indexFromEnd(seq, itemId) {
+    var i;
+    for (i = seq.length - 1; i >= 0; i--) {
+      if (seq[i] === itemId) return seq.length - 1 - i;
+    }
+    return null;
+  }
+
+  function takeLast(arr, n) {
+    return arr.slice(Math.max(0, arr.length - n));
+  }
+
+  var FACTOR_WEIGHTS = {
+    DaysSinceLast: 0.3,
+    AvgInterval: 0.7,
+    MonthPattern: 0.55,
+    RecentCenterPattern: 0.6,
+    MarkovNext: 1.1,
+    RotationBalance: 0.85,
+    FamilyAffinity: 1.15,
+    RoundDup: 0.4,
+    GroupAffinity: 0.25,
+    GlobalFrequency: 0.75,
+    MaxGapPressure: 0.2,
+    StickyTrap: 0.35,
+    DayOfWeek: 0.35
+  };
+
+  function makeFactor(key, label, raw) {
+    var w = FACTOR_WEIGHTS[key] || 0.3;
+    var rawClamped = clamp(raw, 0, 100);
     return {
-      last: last,
-      gap: gap,
-      total: hits.length,
-      monthHits: monthHits,
-      recent30: recent30,
-      roundHits: roundHits,
-      roundLast: roundLast,
-      sameDay: sameDay
+      key: key,
+      label: label,
+      raw: Math.round(rawClamped * 10) / 10,
+      weight: w,
+      weighted: Math.round(rawClamped * w * 100) / 100
     };
   }
 
-  function scoreItem(item, date, session) {
-    var s = statsFor(item.id, date, session);
+  function calcMarkov(seq, itemId, pool) {
+    if (!seq.length) return 40;
+    var prevId = seq[seq.length - 1];
+    if (prevId === itemId) return 10;
+    var fromTotal = 0;
+    var toCount = 0;
+    var i;
+    for (i = 0; i < seq.length - 1; i++) {
+      if (seq[i] !== prevId) continue;
+      fromTotal += 1;
+      if (seq[i + 1] === itemId) toCount += 1;
+    }
+    var alpha = 0.8;
+    if (fromTotal === 0) {
+      if (seq.length <= 1) return 40;
+      var nextHits = 0;
+      for (i = 1; i < seq.length; i++) if (seq[i] === itemId) nextHits += 1;
+      return clamp(28 + nextHits * 100 / (seq.length - 1) * 0.9, 0, 100);
+    }
+    var empirical = toCount * 100 / fromTotal;
+    var laplace = (toCount + alpha) / (fromTotal + alpha * pool) * 100;
+    if (fromTotal < 3) return clamp(empirical * 0.45 + laplace * 0.55, 0, 100);
+    return clamp(empirical * 0.7 + laplace * 0.3, 0, 100);
+  }
+
+  function calcMarkovLookback(seq, itemId, lookback, pool) {
+    if (seq.length < 2) return 0;
+    var take = Math.min(lookback, seq.length);
+    var best = 0;
+    var k;
+    for (k = 1; k <= take; k++) {
+      var prevId = seq[seq.length - k];
+      if (prevId === itemId) continue;
+      var fromTotal = 0;
+      var toCount = 0;
+      var i;
+      for (i = 0; i < seq.length - 1; i++) {
+        if (seq[i] !== prevId) continue;
+        fromTotal += 1;
+        if (seq[i + 1] === itemId) toCount += 1;
+      }
+      if (!fromTotal) continue;
+      best = Math.max(best, (toCount + 0.8) / (fromTotal + 0.8 * pool) * 100);
+    }
+    return clamp(best, 0, 100);
+  }
+
+  function calcRotation(seq, itemId, dueRatio, window) {
+    if (!seq.length) return clamp(40 + dueRatio * 25, 0, 100);
+    var recent = takeLast(seq, Math.min(window, seq.length));
+    var offset = indexFromEnd(recent, itemId);
+    if (offset == null) {
+      var dueScore = 100 - Math.abs(dueRatio - 1.05) * 48;
+      return clamp(Math.min(82, 46 + dueScore * 0.48), 0, 100);
+    }
+    if (offset === 0) return 8;
+    if (offset === 1) return 14;
+    if (offset === 2) return 22;
+    if (offset === 3) return 32;
+    return 40;
+  }
+
+  function calcFamilyAffinity(itemNameText, seq) {
+    if (!seq.length) return 45;
+    var recent = takeLast(seq, Math.min(3, seq.length)).map(function (id) {
+      return familyOf(itemName(id));
+    });
+    var myFamily = familyOf(itemNameText);
+    var match = 0;
+    var i;
+    for (i = 0; i < recent.length; i++) {
+      if (recent[i] === myFamily && recent[i] !== "기타") match += 1;
+    }
+    var recentMain = recent[recent.length - 1];
+    if (recentMain === myFamily && myFamily === "하드") return match >= 2 ? 12 : 18;
+    if (match >= 2 && myFamily === "하드") return 20;
+    if (match === 0 && myFamily !== "기타") {
+      if (recentMain === "하드" && (myFamily === "단과자" || myFamily === "식빵")) return 78;
+      if ((recentMain === "단과자" || recentMain === "식빵") && myFamily === "하드") return 58;
+      if (recentMain === "단과자" && myFamily === "식빵") return 82;
+      if (recentMain === "식빵" && myFamily === "단과자") return 70;
+      return 56;
+    }
+    if (match > 0 && myFamily === "단과자") return clamp(54 + match * 8, 0, 100);
+    if (match > 0 && myFamily === "식빵") return clamp(50 + match * 7, 0, 100);
+    if (match > 0) return clamp(40 + match * 6, 0, 100);
+    return 42;
+  }
+
+  function calcRoundGroup(item, roundIds) {
+    var fam = familyOf(item.name);
+    var familyHits = roundIds.filter(function (id) {
+      return familyOf(itemName(id)) === fam;
+    });
+    if (!familyHits.length) return 62;
+    if (familyHits.indexOf(item.id) !== -1) return 22;
+    return familyHits.length >= 2 ? 34 : 42;
+  }
+
+  function buildPredictContext(date, session) {
+    var prior = priorRecords(date, session).slice().sort(function (a, b) {
+      return a.date < b.date ? -1 : 1;
+    });
+    var examPrior = prior.filter(function (row) { return isExamItemId(row.itemId); });
+    var seq = examPrior.map(function (row) { return row.itemId; });
+    var examDates = uniqueSortedDates(prior);
+    var datesByItem = {};
+    examItems().forEach(function (item) { datesByItem[item.id] = []; });
+    examPrior.forEach(function (row) {
+      if (datesByItem[row.itemId]) datesByItem[row.itemId].push(row.date);
+    });
+    var sameDayIds = {};
+    recordsOn(date).forEach(function (row) {
+      if (isExamItemId(row.itemId)) sameDayIds[row.itemId] = true;
+    });
+    var roundIds = prior.filter(function (row) {
+      return yearOf(row.date) === yearOf(date) && Number(row.session) === Number(session) && isExamItemId(row.itemId);
+    }).map(function (row) { return row.itemId; });
+    var wd = weekdayOf(date);
+    var weekdayTotal = 0;
+    var weekdayCount = {};
+    examPrior.forEach(function (row) {
+      if (weekdayOf(row.date) === wd) {
+        weekdayTotal += 1;
+        weekdayCount[row.itemId] = (weekdayCount[row.itemId] || 0) + 1;
+      }
+    });
+    var monthTotal = prior.filter(function (row) {
+      return monthStr(row.date) === monthStr(date) && isExamItemId(row.itemId);
+    }).length;
+    return {
+      date: date,
+      session: session,
+      seq: seq,
+      examDates: examDates,
+      datesByItem: datesByItem,
+      sameDayIds: sameDayIds,
+      roundIds: roundIds,
+      weekdayTotal: weekdayTotal,
+      weekdayCount: weekdayCount,
+      monthTotal: Math.max(1, monthTotal),
+      pool: examItems().length
+    };
+  }
+
+  function statsFor(itemId, date, session, ctx) {
+    ctx = ctx || buildPredictContext(date, session);
+    var dates = ctx.datesByItem[itemId] || [];
+    var lastDate = dates.length ? dates[dates.length - 1] : null;
+    return {
+      last: lastDate ? { date: lastDate } : null,
+      gap: lastDate ? daysBetween(lastDate, date) : null,
+      total: dates.length,
+      sameDay: !!ctx.sameDayIds[itemId]
+    };
+  }
+
+  function scoreItem(item, date, session, ctx) {
+    ctx = ctx || buildPredictContext(date, session);
+    var s = statsFor(item.id, date, session, ctx);
     if (item.skip) return { score: -9999, reason: "", stats: s };
     if (s.sameDay) return { score: -9999, reason: "이 날짜 확정", stats: s };
-    var score = 0;
-    if (s.roundHits === 0) score += 28;
-    else score -= s.roundHits * 12;
-    if (s.gap == null) {
-      score += 80;
-    } else {
-      score += Math.min(s.gap, 120) * 1.2;
-      if (s.gap <= 7) score -= 40;
-      else if (s.gap <= 14) score -= 18;
+
+    var centerDates = ctx.datesByItem[item.id] || [];
+    var daysSince = centerDates.length ? Math.max(0, daysBetween(centerDates[centerDates.length - 1], date)) : 35;
+    var gaps = [];
+    var i;
+    for (i = 1; i < centerDates.length; i++) gaps.push(daysBetween(centerDates[i - 1], centerDates[i]));
+    var avgGap = gaps.length ? mean(gaps) : 28;
+    var gapStd = stdev(gaps, avgGap);
+    var maxGap = gaps.length ? Math.max.apply(null, gaps) : Math.max(daysSince, 1);
+
+    var examGaps = [];
+    for (i = 1; i < centerDates.length; i++) {
+      var sessions = countSessionsBetween(ctx.examDates, centerDates[i - 1], centerDates[i]);
+      if (sessions > 0) examGaps.push(sessions);
     }
-    if (s.monthHits === 0) score += 22;
-    else score -= s.monthHits * 10;
-    score -= s.recent30 * 14;
-    score += Math.max(0, 8 - s.total) * 3;
+    var avgExamGap = examGaps.length ? mean(examGaps) : 5;
+    var examGapStd = stdev(examGaps, avgExamGap);
+    var examsSince = centerDates.length ? countSessionsAfter(ctx.examDates, centerDates[centerDates.length - 1]) : Math.min(ctx.examDates.length, 6);
+    var examDueRatio = examsSince / Math.max(avgExamGap, 1);
+    var calDueRatio = daysSince / Math.max(avgGap, 1);
+    var dueRatio = ctx.examDates.length >= 8 ? 0.4 * calDueRatio + 0.6 * examDueRatio : calDueRatio;
+    var appearCount = centerDates.length;
+
+    var daysScore = clamp(daysSince / 70 * 85, 0, 100);
+    var sessionScore = clamp(examsSince / Math.max(avgExamGap, 1) * 55, 0, 100);
+    daysScore = clamp(0.55 * daysScore + 0.45 * sessionScore, 0, 100);
+
+    var calFit = 100 * gaussian(daysSince, avgGap, gapStd);
+    var examFit = 100 * gaussian(examsSince, avgExamGap, examGapStd);
+    var linCal = avgGap <= 0 ? 45 : clamp(100 - Math.abs(daysSince - avgGap) / Math.max(avgGap, 1) * 110, 0, 100);
+    var linExam = avgExamGap <= 0 ? 45 : clamp(100 - Math.abs(examsSince - avgExamGap) / Math.max(avgExamGap, 1) * 110, 0, 100);
+    var avgFit = clamp(0.25 * linCal + 0.2 * linExam + 0.25 * calFit + 0.3 * examFit, 0, 100);
+    var maxGapPressure = clamp(daysSince / maxGap * 55, 0, 100);
+
+    var chronicMul = 1;
+    if (dueRatio >= 2) chronicMul = clamp(0.95 - (dueRatio - 2) * 0.22, 0.35, 0.85);
+    else if (dueRatio >= 1.5) chronicMul = clamp(1 - (dueRatio - 1.5) * 0.28, 0.55, 1);
+    else if (appearCount >= 5 && dueRatio >= 1.3) chronicMul = clamp(1 - (dueRatio - 1.3) * 0.15, 0.7, 1);
+    daysScore *= chronicMul;
+    avgFit *= chronicMul;
+    maxGapPressure *= chronicMul;
+    if (dueRatio >= 1.8) avgFit = Math.min(avgFit, 48);
+    else if (dueRatio >= 1.45) avgFit = Math.min(avgFit, 62);
+
+    var examSessionsLast14 = 0;
+    for (i = 0; i < ctx.examDates.length; i++) {
+      if (daysBetween(ctx.examDates[i], date) <= 14) examSessionsLast14 += 1;
+    }
+    if (examSessionsLast14 >= 5) {
+      daysScore *= 0.28;
+      maxGapPressure *= 0.25;
+      avgFit *= 0.62;
+    } else if (examSessionsLast14 >= 3) {
+      daysScore *= 0.4;
+      maxGapPressure *= 0.35;
+      avgFit *= 0.72;
+    } else if (examSessionsLast14 >= 2) {
+      daysScore *= 0.55;
+      maxGapPressure *= 0.45;
+      avgFit *= 0.82;
+    }
+
+    var lastAppearOffset = indexFromEnd(ctx.seq, item.id);
+    if (lastAppearOffset === 0) {
+      daysScore *= 0.1;
+      maxGapPressure *= 0.1;
+      avgFit *= 0.3;
+    } else if (lastAppearOffset >= 1 && lastAppearOffset <= 2) {
+      daysScore *= 0.22;
+      maxGapPressure *= 0.2;
+      avgFit *= 0.5;
+    } else if (daysSince < 10) {
+      daysScore *= 0.45;
+      maxGapPressure *= 0.4;
+    }
+
+    var myFamily = familyOf(item.name);
+    var lastFamily = ctx.seq.length ? familyOf(itemName(ctx.seq[ctx.seq.length - 1])) : null;
+    var familyStreak = 0;
+    var recentFam = takeLast(ctx.seq, 3);
+    for (i = recentFam.length - 1; i >= 0; i--) {
+      if (familyOf(itemName(recentFam[i])) === myFamily) familyStreak += 1;
+      else break;
+    }
+    if (lastFamily && lastFamily === myFamily && myFamily === "하드") {
+      daysScore *= 0.45;
+      avgFit *= 0.5;
+      maxGapPressure *= 0.4;
+    } else if (familyStreak >= 2 && myFamily === "하드") {
+      daysScore *= 0.6;
+      avgFit *= 0.65;
+      maxGapPressure *= 0.55;
+    }
+    if (lastFamily === "단과자" && myFamily === "하드" && dueRatio >= 1.35) {
+      avgFit *= 0.55;
+      daysScore *= 0.5;
+      maxGapPressure *= 0.5;
+    }
+    if (lastFamily === "단과자" && myFamily === "식빵") {
+      avgFit = Math.max(avgFit, 52);
+      daysScore = Math.max(daysScore, 28);
+    }
+
+    var recentScore = 46;
+    if (lastAppearOffset === 0) recentScore = 5;
+    else if (lastAppearOffset === 1) recentScore = 14;
+    else if (lastAppearOffset === 2) recentScore = 24;
+    else if (lastAppearOffset === 3 || lastAppearOffset === 4) recentScore = 36;
+    else if (lastAppearOffset == null) recentScore = 52;
+
+    var markovScore = Math.max(calcMarkov(ctx.seq, item.id, ctx.pool), calcMarkovLookback(ctx.seq, item.id, 2, ctx.pool));
+    var rotationScore = calcRotation(ctx.seq, item.id, dueRatio, 8) * chronicMul;
+    if (dueRatio >= 1.7) rotationScore = Math.min(rotationScore, 52);
+    if (lastFamily === "단과자" && myFamily === "하드" && dueRatio >= 1.35) rotationScore = Math.min(rotationScore, 38);
+    if (appearCount <= 1) rotationScore = Math.min(rotationScore, 32);
+    else if (appearCount === 2) rotationScore = Math.min(rotationScore, 48);
+
+    var monthCount = 0;
+    for (i = 0; i < centerDates.length; i++) {
+      if (centerDates[i].slice(5, 7) === date.slice(5, 7)) monthCount += 1;
+    }
+    var monthScore = clamp(monthCount * 100 / ctx.monthTotal * 3, 0, 100);
+    var freqScore = appearCount <= 0 ? 8 : appearCount === 1 ? 14 : appearCount === 2 ? 26 : appearCount <= 5 ? 52 : appearCount <= 8 ? 48 : clamp(48 - (appearCount - 8) * 3.5, 0, 100);
+    var familyScore = calcFamilyAffinity(item.name, ctx.seq);
+    var roundDupScore = ctx.roundIds.indexOf(item.id) !== -1 ? 12 : 60;
+    var groupScore = calcRoundGroup(item, ctx.roundIds);
+    var antiSticky = chronicMul < 0.9 ? clamp(70 + chronicMul * 25, 0, 100) : 95;
+    var weekdayHits = ctx.weekdayCount[item.id] || 0;
+    var weekdayScore = 50;
+    if (ctx.weekdayTotal >= 5) {
+      var expected = ctx.weekdayTotal / ctx.pool;
+      weekdayScore = clamp(50 + (weekdayHits - expected) / Math.max(Math.sqrt(expected), 0.4) * 12, 0, 100);
+    }
+
+    var factors = [
+      makeFactor("DaysSinceLast", "미출제기간", daysScore),
+      makeFactor("AvgInterval", "평균간격 도래", avgFit),
+      makeFactor("MonthPattern", "월별 패턴", monthScore),
+      makeFactor("RecentCenterPattern", "최근 패턴", recentScore),
+      makeFactor("MarkovNext", "직전 전이", markovScore),
+      makeFactor("RotationBalance", "회전 균형", rotationScore),
+      makeFactor("FamilyAffinity", "계열 전환", familyScore),
+      makeFactor("RoundDup", "회차 중복억제", roundDupScore),
+      makeFactor("GroupAffinity", "회차 계열", groupScore),
+      makeFactor("GlobalFrequency", "출제빈도", freqScore),
+      makeFactor("MaxGapPressure", "최장공백 압박", maxGapPressure),
+      makeFactor("StickyTrap", "만성미출제 억제", antiSticky),
+      makeFactor("DayOfWeek", "요일 경향", weekdayScore)
+    ];
+    var score = 0;
+    for (i = 0; i < factors.length; i++) score += factors[i].weighted;
+
     var reason;
-    if (s.roundHits) reason = "이번 회차 " + s.roundHits + "번 나옴" + (s.roundLast ? " · " + s.roundLast.date.slice(5) : "");
-    else if (s.gap == null) reason = "이번 회차 미출제 · 기록 없음";
-    else reason = "이번 회차 미출제 · " + s.gap + "일 공백";
+    if (roundDupScore <= 12) {
+      reason = "이번 회차 이미 출제";
+    } else {
+      var rankedFactors = factors.slice().sort(function (a, b) { return b.weighted - a.weighted; });
+      var labels = [];
+      for (i = 0; i < rankedFactors.length && labels.length < 2; i++) {
+        if (rankedFactors[i].key === "StickyTrap") continue;
+        labels.push(rankedFactors[i].label);
+      }
+      reason = labels.join(" · ");
+    }
     return { score: score, reason: reason, stats: s };
   }
 
   function predict(date, session) {
     session = session || inferSession(date);
+    var ctx = buildPredictContext(date, session);
     var ranked = examItems().map(function (item) {
-      var result = scoreItem(item, date, session);
+      var result = scoreItem(item, date, session, ctx);
       return {
         item: item,
         score: result.score,
@@ -572,12 +974,26 @@
       };
     }).filter(function (row) { return row.score > -9000; })
       .sort(function (a, b) { return b.score - a.score; });
-    var max = ranked.length ? ranked[0].score : 1;
-    var min = ranked.length ? ranked[ranked.length - 1].score : 0;
-    ranked.forEach(function (row) {
-      row.pct = max === min ? 100 : Math.round(((row.score - min) / (max - min)) * 100);
+    if (!ranked.length) return ranked;
+    var maxS = ranked[0].score;
+    var temp = 16;
+    var exps = ranked.map(function (row) { return Math.exp((row.score - maxS) / temp); });
+    var sum = 0;
+    var i;
+    for (i = 0; i < exps.length; i++) sum += exps[i];
+    var maxP = exps[0] / sum;
+    ranked.forEach(function (row, idx) {
+      row.pct = Math.max(8, Math.round(100 * (exps[idx] / sum) / maxP));
     });
     return ranked;
+  }
+
+  function predictPath(date, session) {
+    var inferred = inferSession(date);
+    var q = [];
+    if (date && date !== todayStr()) q.push("d=" + date);
+    if (session && Number(session) !== Number(inferred)) q.push("r=" + Number(session));
+    return q.length ? "/?" + q.join("&") : "/";
   }
 
   function parseHash() {
@@ -595,7 +1011,7 @@
 
   function tabBar(active) {
     return '<nav class="tabbar">' +
-      '<button type="button" class="' + (active === "predict" ? "on" : "") + '" data-go="/">예상</button>' +
+      '<button type="button" class="' + (active === "predict" ? "on" : "") + '" data-go="' + lastPredictPath + '">예상</button>' +
       '<button type="button" class="' + (active === "month" ? "on" : "") + '" data-go="/month">월별</button>' +
       '<button type="button" class="' + (active === "log" ? "on" : "") + '" data-go="/log">기록</button>' +
       '<button type="button" class="' + (active === "items" ? "on" : "") + '" data-go="/items">품목</button>' +
@@ -611,6 +1027,9 @@
   var state = loadState();
   saveState();
   var draft = null;
+  var lastPredictPath = "/";
+  var lastPredictDate = todayStr();
+  var lastPredictSession = null;
 
   function bindNav() {
     root.querySelectorAll("[data-go]").forEach(function (el) {
@@ -619,9 +1038,15 @@
   }
 
   function renderHome() {
-    var date = todayStr();
+    var parsed = parseHash();
+    var date = parseLooseDate(parsed.params.get("d")) || todayStr();
+    var pinnedRound = parseSession(parsed.params.get("r"));
+    var roundNo = pinnedRound || inferSession(date);
+    lastPredictDate = date;
+    lastPredictSession = roundNo;
+    lastPredictPath = predictPath(date, pinnedRound ? roundNo : inferSession(date));
     var year = yearOf(date);
-    var ranked = predict(date, null);
+    var ranked = predict(date, roundNo);
     var monthRows = recordsInMonth(monthStr(date));
     var unique = {};
     monthRows.forEach(function (row) {
@@ -630,22 +1055,52 @@
     });
     var top = ranked.slice(0, 5);
     var latest = lastSession(year);
-    var roundNo = inferSession(date);
     var roundRows = recordsInRound(year, roundNo);
+    var isToday = date === todayStr();
     root.innerHTML =
       '<div class="topbar"><span class="ghost"></span><h1>일자별 예상</h1><button class="ghost" data-go="/settings">시험장</button></div>' +
       '<p class="site">' + escapeHtml(state.site) + " · 제빵 실기 · " + year + "년 " + (latest ? sessionLabel(latest) : "") + "</p>" +
+      '<div class="field"><span>조회 날짜</span></div>' +
+      '<div class="date-row">' +
+        '<button class="ghost" type="button" id="prev-day">이전</button>' +
+        '<input id="home-date" type="date" value="' + date + '">' +
+        '<button class="ghost" type="button" id="next-day">다음</button>' +
+      "</div>" +
+      '<label class="field"><span>회차</span><input id="home-round" type="number" min="1" max="366" value="' + roundNo + '"></label>' +
+      '<p class="lede" style="margin-top:12px">' + formatKor(date) + "</p>" +
       '<div class="stats">' +
-        '<div class="card"><small>이번 회차</small><strong>' + sessionLabel(roundNo) + "</strong></div>" +
+        '<div class="card"><small>조회 회차</small><strong>' + sessionLabel(roundNo) + "</strong></div>" +
         '<div class="card"><small>이번 회차 일수</small><strong>' + roundRows.length + "</strong></div>" +
         '<div class="card"><small>이번 달 품목</small><strong>' + Object.keys(unique).length + "</strong></div>" +
       "</div>" +
-      '<p class="lede">같은 회차에 시험일이 여러 날 있습니다. 이번 회차에서 아직 안 나온 품목을 위로 둡니다.</p>' +
       (state.records.length ? renderRankList(top) : '<div class="empty card">아직 기출이 없습니다. 회차와 날짜를 넣으면 예상이 생깁니다.</div>') +
-      '<button class="btn btn-primary" data-go="/day/' + date + '">오늘 자세히</button>' +
-      '<button class="btn btn-secondary" data-go="/new">기출 입력</button>' +
+      (isToday ? "" : '<button class="btn btn-secondary" type="button" id="go-today">오늘로</button>') +
+      '<button class="btn btn-primary" data-go="/day/' + date + (pinnedRound ? "?r=" + roundNo : "") + '">' + (isToday ? "오늘 자세히" : "이 날짜 자세히") + "</button>" +
+      '<button class="btn btn-secondary" data-go="/new?date=' + date + '">기출 입력</button>' +
       tabBar("predict");
     bindNav();
+    function goHome(nextDate, nextRound) {
+      go(predictPath(nextDate, nextRound));
+    }
+    document.getElementById("home-date").addEventListener("change", function () {
+      if (!this.value) return;
+      goHome(this.value, inferSession(this.value));
+    });
+    document.getElementById("prev-day").addEventListener("click", function () {
+      var next = shiftDate(date, -1);
+      goHome(next, inferSession(next));
+    });
+    document.getElementById("next-day").addEventListener("click", function () {
+      var next = shiftDate(date, 1);
+      goHome(next, inferSession(next));
+    });
+    document.getElementById("home-round").addEventListener("change", function () {
+      var n = parseSession(this.value);
+      if (!n) return;
+      go(predictPath(date, n));
+    });
+    var todayBtn = document.getElementById("go-today");
+    if (todayBtn) todayBtn.addEventListener("click", function () { go("/"); });
   }
 
   function renderRankList(rows) {
@@ -661,9 +1116,13 @@
 
   function renderDay() {
     var parsed = parseHash();
-    var date = parsed.parts[1] || todayStr();
+    var date = parseLooseDate(parsed.parts[1]) || todayStr();
     var actual = recordsOn(date);
-    var session = parsed.params.get("r") ? parseSession(parsed.params.get("r")) : (actual.length ? actual[0].session : inferSession(date));
+    var pinnedRound = parseSession(parsed.params.get("r"));
+    var session = pinnedRound || (actual.length ? actual[0].session : inferSession(date));
+    lastPredictDate = date;
+    lastPredictSession = session;
+    lastPredictPath = predictPath(date, pinnedRound ? session : inferSession(date));
     var ranked = predict(date, session);
     var top = ranked.slice(0, 8);
     var roundRows = recordsInRound(yearOf(date), session);
@@ -685,9 +1144,14 @@
       : '<p class="muted">이 날짜 확정 기출은 아직 없습니다.</p>';
 
     root.innerHTML =
-      '<div class="topbar"><button class="ghost" data-go="/">닫기</button><h2>일자 예상</h2><button class="ghost" data-go="/new?date=' + date + '">입력</button></div>' +
+      '<div class="topbar"><button class="ghost" data-go="' + lastPredictPath + '">닫기</button><h2>일자 예상</h2><button class="ghost" data-go="/new?date=' + date + '">입력</button></div>' +
       '<p class="site">' + escapeHtml(state.site) + " · 같은 회차에 시험일 여러 날</p>" +
-      '<div class="field"><span>날짜</span><input id="day-date" type="date" value="' + date + '"></div>' +
+      '<div class="field"><span>날짜</span></div>' +
+      '<div class="date-row">' +
+        '<button class="ghost" type="button" id="prev-day">이전</button>' +
+        '<input id="day-date" type="date" value="' + date + '">' +
+        '<button class="ghost" type="button" id="next-day">다음</button>' +
+      "</div>" +
       '<label class="field" style="margin-top:12px"><span>회차</span><input id="day-round" type="number" min="1" max="366" value="' + session + '"></label>' +
       '<p class="lede" style="margin-top:12px">' + formatKor(date) + " · " + sessionLabel(session) + " · 시험일 " + roundRows.length + "날</p>" +
       '<p class="section-title">이 날짜</p>' + actualHtml +
@@ -705,7 +1169,14 @@
       tabBar("predict");
     bindNav();
     document.getElementById("day-date").addEventListener("change", function () {
+      if (!this.value) return;
       go("/day/" + this.value);
+    });
+    document.getElementById("prev-day").addEventListener("click", function () {
+      go("/day/" + shiftDate(date, -1));
+    });
+    document.getElementById("next-day").addEventListener("click", function () {
+      go("/day/" + shiftDate(date, 1));
     });
     document.getElementById("day-round").addEventListener("change", function () {
       var n = parseSession(this.value);
@@ -737,7 +1208,7 @@
     for (i = 1; i <= count; i++) {
       var date = ym + "-" + pad(i);
       var has = byDate[date];
-      var cls = "day" + (has ? " on" : "") + (date === todayStr() ? " today" : "");
+      var cls = "day" + (has ? " on" : "") + (date === todayStr() ? " today" : "") + (date === lastPredictDate && date !== todayStr() ? " pick" : "");
       cells.push(
         '<button class="' + cls + '" type="button" data-go="/day/' + date + '"><b>' + i + "</b>" +
         (has ? '<span class="dot"></span>' : "") + "</button>"
@@ -802,16 +1273,17 @@
   }
 
   function renderItems() {
-    var date = todayStr();
-    var ranked = predict(date, null);
+    var date = lastPredictDate || todayStr();
+    var session = lastPredictSession || inferSession(date);
+    var ranked = predict(date, session);
     var byId = {};
     ranked.forEach(function (row, i) { byId[row.item.id] = { rank: i + 1, row: row }; });
     root.innerHTML =
       '<div class="topbar"><span class="ghost"></span><h1>제빵 품목</h1><span class="ghost"></span></div>' +
-      '<p class="lede">2026 실기 공개과제 20종입니다. 공백이 길수록 오늘 예상 순위가 올라갑니다.</p>' +
+      '<p class="lede">' + formatKor(date) + " 기준 순위입니다.</p>" +
       '<div class="card">' + examItems().map(function (item) {
           var info = byId[item.id];
-          var s = info ? info.row.stats : statsFor(item.id, date, null);
+          var s = info ? info.row.stats : statsFor(item.id, date, session);
           var last = s.last ? s.last.date : "기록 없음";
           return '<div class="item-link"><div><strong>' + escapeHtml(item.name) + "</strong><span>" +
             "최근 " + last + " · 누적 " + s.total + "회</span></div>" +
@@ -980,7 +1452,7 @@
 
   function renderSettings() {
     root.innerHTML =
-      '<div class="topbar"><button class="ghost" data-go="/">닫기</button><h2>시험장</h2><span class="ghost"></span></div>' +
+      '<div class="topbar"><button class="ghost" data-go="' + lastPredictPath + '">닫기</button><h2>시험장</h2><span class="ghost"></span></div>' +
       '<p class="lede">회사 PC에서는 이 브라우저에만 저장됩니다. GitHub나 외부 서버로 보내지 않습니다.</p>' +
       '<label class="field"><span>시험장 이름</span><input id="site" type="text" maxlength="40" value="' + escapeHtml(state.site) + '"></label>' +
       '<button class="btn btn-primary" id="save-site">이름 저장</button>' +
@@ -1000,7 +1472,7 @@
       var name = document.getElementById("site").value.trim() || "시험장 1곳";
       state.site = name;
       saveState();
-      go("/");
+      go(lastPredictPath || "/");
     });
     document.getElementById("export-txt").addEventListener("click", function () {
       downloadText("기출_" + state.site + ".txt", recordsToTxt());
