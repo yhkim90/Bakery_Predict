@@ -58,7 +58,7 @@
     .topbar { display: flex; align-items: center; min-height: var(--tap); gap: 8px; margin-bottom: 8px; }
     .topbar h1, .topbar h2 { flex: 1; margin: 0; font-size: 20px; font-weight: 700; text-align: center; }
     .ghost { min-width: 52px; min-height: var(--tap); color: var(--accent); font-weight: 600; font-size: 15px; }
-    .lede { margin: 0 0 16px; color: var(--muted); font-size: 14px; }
+    .lede { margin: 0 0 16px; color: var(--muted); font-size: 14px; word-break: keep-all; overflow-wrap: break-word; }
     .site { margin: 0 0 16px; color: var(--accent); font-size: 13px; font-weight: 700; }
     .card {
       padding: 14px 16px; border-radius: var(--radius);
@@ -1360,7 +1360,7 @@
     });
     root.innerHTML =
       '<div class="topbar"><span class="ghost"></span><h1>기출 기록</h1><button class="ghost" data-go="/new">추가</button></div>' +
-      '<p class="lede">' + escapeHtml(state.site) + " · 같은 회차에 시험일이 여러 날 있습니다. " + yearOf(todayStr()) + "년은 " + (lastSession(yearOf(todayStr())) || 0) + "회까지 있습니다.</p>" +
+      '<p class="lede">' + escapeHtml(state.site) + " · 같은 회차에 시험일이 여러 날 있습니다.<br>" + yearOf(todayStr()) + "년은 " + (lastSession(yearOf(todayStr())) || 0) + "회까지 있습니다.</p>" +
       (rows.length ? '<div class="card">' + rows.map(function (row) {
         return '<button class="item-link" data-go="/edit/' + row.id + '"><div><strong>' + sessionLabel(row.session) + " · " + formatKor(row.date) + "</strong><span>" +
           escapeHtml(itemName(row.itemId)) + '</span></div><span class="pill">수정</span></button>';
