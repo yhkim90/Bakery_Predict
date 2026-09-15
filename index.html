@@ -48,21 +48,23 @@
       color: var(--text);
     }
     button { appearance: none; border: 0; background: none; padding: 0; cursor: pointer; }
-    .app { width: min(430px, 100%); max-width: 100%; margin: 0 auto; padding: 8px 20px 108px; overflow-x: hidden; }
+    .app { width: min(430px, 100%); max-width: 100%; margin: 0 auto; padding: 4px 16px 100px; overflow-x: hidden; }
     .tabbar {
       position: fixed; left: 0; right: 0; bottom: 0;
       display: grid; grid-template-columns: repeat(4, 1fr);
-      padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
+      padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
       background: var(--bg); border-top: 1px solid var(--line);
     }
-    .tabbar button { min-height: 48px; font-size: 12px; font-weight: 700; color: var(--muted); }
+    .tabbar button { min-height: 44px; font-size: 12px; font-weight: 700; color: var(--muted); }
     .tabbar button.on { color: var(--accent); }
-    .topbar { display: flex; align-items: center; min-height: var(--tap); gap: 8px; margin-bottom: 8px; }
-    .topbar h1, .topbar h2 { flex: 1; margin: 0; font-size: 20px; font-weight: 700; text-align: center; }
-    .ghost { min-width: 52px; min-height: var(--tap); color: var(--accent); font-weight: 600; font-size: 15px; }
-    .lede { margin: 0 0 16px; color: var(--muted); font-size: 14px; word-break: keep-all; overflow-wrap: break-word; }
+    .topbar { display: flex; align-items: center; min-height: 40px; gap: 8px; margin-bottom: 2px; }
+    .topbar h1, .topbar h2 { flex: 1; margin: 0; font-size: 17px; font-weight: 700; text-align: center; }
+    .ghost { min-width: 48px; min-height: 40px; color: var(--accent); font-weight: 600; font-size: 14px; }
+    .lede { margin: 0 0 10px; color: var(--muted); font-size: 13px; word-break: keep-all; overflow-wrap: break-word; }
     .lede-line { display: block; }
-    .site { margin: 0 0 16px; color: var(--accent); font-size: 13px; font-weight: 700; }
+    .lede.tight { margin: 0 0 8px; }
+    .lede .inline { min-width: 0; min-height: 0; font-size: 13px; font-weight: 700; }
+    .site { margin: 0 0 8px; color: var(--accent); font-size: 12px; font-weight: 700; }
     .card {
       padding: 14px 16px; border-radius: var(--radius);
       background: var(--surface); border: 1px solid var(--line);
@@ -75,8 +77,10 @@
     .stats strong { display: block; margin-top: 4px; font-size: 22px; }
     .btn {
       display: flex; align-items: center; justify-content: center;
-      width: 100%; min-height: 52px; margin-top: 12px; border-radius: 999px; font-weight: 700;
+      width: 100%; min-height: 44px; margin-top: 8px; border-radius: 999px; font-weight: 700;
     }
+    .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+    .btn-row .btn { margin-top: 0; }
     .btn-primary { background: var(--accent); color: #fff; }
     .btn-secondary { background: #efe4d8; color: var(--accent); }
     .btn-danger { color: var(--danger); }
@@ -117,44 +121,58 @@
       letter-spacing: 0.03em;
       padding: 0;
     }
-    .date-nav {
-      display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0 0 8px;
-      width: 100%; max-width: 100%;
+    .lookup {
+      display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; gap: 6px;
+      align-items: center; margin: 0 0 6px; width: 100%; max-width: 100%;
     }
-    .date-nav .ghost {
-      min-width: 0; width: 100%; background: #efe4d8; border-radius: 12px;
-      font-weight: 700; color: var(--accent);
+    .lookup.has-round { grid-template-columns: 44px minmax(0, 1fr) 52px 44px; }
+    .lookup .ghost {
+      min-width: 0; width: 100%; height: 40px; min-height: 40px;
+      background: #efe4d8; border-radius: 10px;
+      font-weight: 700; font-size: 13px; color: var(--accent);
     }
-    .date-nav .ghost:disabled { opacity: 0.35; cursor: default; }
+    .lookup .ghost:disabled { opacity: 0.35; cursor: default; }
     .date-wrap {
-      position: relative; margin: 0 0 12px;
-      width: 100%; max-width: 100%; height: 48px; max-height: 48px;
-      overflow: hidden; border-radius: 12px;
+      position: relative; margin: 0;
+      width: 100%; max-width: 100%; height: 40px; max-height: 40px;
+      overflow: hidden; border-radius: 10px;
     }
     .date-face {
-      height: 48px; padding: 0 44px 0 14px;
-      border: 1px solid #d9c9ba; border-radius: 12px; background: #fff;
-      color: var(--accent); font-weight: 700; font-size: 17px;
-      font-variant-numeric: tabular-nums; letter-spacing: 0.03em;
+      height: 40px; padding: 0 34px 0 10px;
+      border: 1px solid #d9c9ba; border-radius: 10px; background: #fff;
+      color: var(--accent); font-weight: 700; font-size: 15px;
+      font-variant-numeric: tabular-nums; letter-spacing: 0.02em;
       display: flex; align-items: center;
     }
     .date-wrap input[type="date"] {
       position: absolute; left: 0; top: 0; z-index: 2;
-      width: 100%; max-width: 100%; height: 48px; max-height: 48px;
-      margin: 0; padding: 0; border: 0; border-radius: 12px;
+      width: 100%; max-width: 100%; height: 40px; max-height: 40px;
+      margin: 0; padding: 0; border: 0; border-radius: 10px;
       opacity: 0; background: transparent;
       -webkit-appearance: none; appearance: none;
     }
     .date-wrap .cal-ico {
-      position: absolute; right: 12px; top: 0; bottom: 0; width: 22px; z-index: 1;
+      position: absolute; right: 8px; top: 0; bottom: 0; width: 18px; z-index: 1;
       display: flex; align-items: center; pointer-events: none; color: var(--accent);
     }
     .date-wrap .cal-ico svg {
-      width: 22px; height: 22px; fill: none; stroke: currentColor;
+      width: 18px; height: 18px; fill: none; stroke: currentColor;
       stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
     }
     .date-wrap input[type="date"]::-webkit-calendar-picker-indicator {
-      opacity: 0; width: 100%; height: 48px; margin: 0; padding: 0;
+      opacity: 0; width: 100%; height: 40px; margin: 0; padding: 0;
+    }
+    .round-wrap {
+      height: 40px; border: 1px solid #d9c9ba; border-radius: 10px; background: #fff;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      min-width: 0; overflow: hidden;
+    }
+    .round-wrap span { color: var(--muted); font-size: 9px; font-weight: 700; line-height: 1; }
+    .lookup .round-wrap input[type="number"] {
+      width: 100%; min-height: 0; height: 22px; margin: 0; padding: 0;
+      border: 0; background: transparent; text-align: center;
+      font-size: 15px; font-weight: 700; color: var(--accent);
+      -webkit-text-fill-color: var(--accent);
     }
     textarea { min-height: 180px; resize: vertical; line-height: 1.5; }
     .sample {
@@ -171,8 +189,8 @@
     }
     .switch button.on { background: var(--surface); color: var(--accent); }
     .rank {
-      display: grid; grid-template-columns: 28px 1fr; gap: 10px; align-items: center;
-      padding: 12px 0; border-bottom: 1px solid var(--line);
+      display: grid; grid-template-columns: 26px 1fr; gap: 8px; align-items: center;
+      padding: 8px 0; border-bottom: 1px solid var(--line);
     }
     .rank:last-child { border-bottom: 0; }
     .num {
@@ -191,11 +209,11 @@
       vertical-align: middle;
     }
     .actual {
-      margin: 0 0 12px; color: var(--accent); font-size: 15px; font-weight: 700;
+      margin: 0 0 8px; color: var(--accent); font-size: 14px; font-weight: 700;
       word-break: keep-all;
     }
     .actual.soon { color: var(--muted); font-weight: 600; }
-    .bar { height: 6px; border-radius: 99px; background: #efe4d8; margin-top: 8px; overflow: hidden; }
+    .bar { height: 5px; border-radius: 99px; background: #efe4d8; margin-top: 5px; overflow: hidden; }
     .bar i { display: block; height: 100%; background: var(--accent); }
     .cal-head {
       display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; margin-bottom: 8px;
@@ -236,7 +254,7 @@
     }
     .footer-actions { margin-top: 24px; display: flex; flex-direction: column; gap: 4px; }
     .footer-actions button { min-height: 40px; color: var(--muted); font-size: 14px; }
-    .empty { padding: 28px 8px; text-align: center; color: var(--muted); }
+    .empty { padding: 16px 8px; text-align: center; color: var(--muted); }
     .choice {
       width: 100%; text-align: left; padding: 12px 14px; border: 1px solid var(--line);
       border-radius: 12px; background: var(--surface); min-height: 48px;
@@ -250,7 +268,7 @@
 (function () {
   var STORAGE_KEY = "bakery-predict-practical-v1";
   var SEED_HASH_KEY = STORAGE_KEY + "-seed-hash";
-  var APP_VERSION = "20260916d";
+  var APP_VERSION = "20260916e";
   var WEEK = ["일", "월", "화", "수", "목", "금", "토"];
 
   var ITEMS = [
@@ -1328,17 +1346,20 @@
       "</nav>";
   }
 
-  function dateFieldHtml(id, date) {
-    return '<div class="date-nav">' +
+  function dateFieldHtml(id, date, roundId, roundNo) {
+    return '<div class="lookup' + (roundId ? " has-round" : "") + '">' +
       '<button class="ghost" type="button" id="prev-day">이전</button>' +
-      '<button class="ghost" type="button" id="next-day">다음</button>' +
-      "</div>" +
       '<div class="date-wrap">' +
         '<div class="date-face">' + escapeHtml(String(date || "").replace(/-/g, ".")) + "</div>" +
         '<input id="' + id + '" type="date" value="' + date + '">' +
         '<span class="cal-ico" aria-hidden="true">' +
           '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2.5"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>' +
         "</span>" +
+      "</div>" +
+      (roundId
+        ? '<label class="round-wrap"><span>회</span><input id="' + roundId + '" type="number" min="1" max="366" value="' + roundNo + '"></label>'
+        : "") +
+      '<button class="ghost" type="button" id="next-day">다음</button>' +
       "</div>";
   }
 
@@ -1408,27 +1429,18 @@
     var rankHtml = !allExamDates().length
       ? scheduleEmptyHtml()
       : (scheduled ? statusBannerHtml(date, ranked) + renderRankList(top, actualId) : notExamHtml());
-    var dateLede = formatKor(date);
-    if (actualId) dateLede += " · 시험일";
-    else if (scheduled && isFutureDate(date)) dateLede += " · 진행 전";
-    else if (scheduled) dateLede += " · 미확인";
-    else dateLede += " · 시험일 아님";
+    var status = actualId ? "확인" : (scheduled && isFutureDate(date) ? "진행 전" : (scheduled ? "미확인" : "시험일 아님"));
+    var dateLede = WEEK[weekdayOf(date)] + " · " + status + " · " + roundExamDays.length + "일 · 이달 " + Object.keys(unique).length + "품목";
     root.innerHTML =
       '<div class="topbar"><button class="ghost" type="button" data-reload>새로고침</button><h1>일자별 예상</h1><button class="ghost" data-go="/settings">시험장</button></div>' +
-      '<p class="site">' + escapeHtml(state.site) + " · 제빵 실기 · " + year + "년 " + (latest ? sessionLabel(latest) : "") + "</p>" +
-      '<div class="field"><span>조회 날짜</span></div>' +
-      dateFieldHtml("home-date", date) +
-      '<label class="field"><span>회차</span><input id="home-round" type="number" min="1" max="366" value="' + roundNo + '"></label>' +
-      '<p class="lede" style="margin-top:12px">' + dateLede + "</p>" +
-      '<div class="stats">' +
-        '<div class="card"><small>조회 회차</small><strong>' + sessionLabel(roundNo) + "</strong></div>" +
-        '<div class="card"><small>이번 회차 일수</small><strong>' + roundExamDays.length + "</strong></div>" +
-        '<div class="card"><small>이번 달 품목</small><strong>' + Object.keys(unique).length + "</strong></div>" +
-      "</div>" +
+      '<p class="site">' + escapeHtml(state.site) + " · " + year + "년 " + (latest ? sessionLabel(latest) : "") + "</p>" +
+      dateFieldHtml("home-date", date, "home-round", roundNo) +
+      '<p class="lede tight">' + dateLede + (isToday ? "" : ' <button type="button" class="inline" id="go-today">오늘</button>') + "</p>" +
       rankHtml +
-      (isToday ? "" : '<button class="btn btn-secondary" type="button" id="go-today">오늘로</button>') +
-      '<button class="btn btn-primary" data-go="/day/' + date + (pinnedRound ? "?r=" + roundNo : "") + '">' + (isToday ? "오늘 자세히" : "이 날짜 자세히") + "</button>" +
-      '<button class="btn btn-secondary" data-go="/new?date=' + date + '">' + (scheduled ? "기출 입력" : "시험일 넣기") + "</button>" +
+      '<div class="btn-row">' +
+        '<button class="btn btn-primary" data-go="/day/' + date + (pinnedRound ? "?r=" + roundNo : "") + '">자세히</button>' +
+        '<button class="btn btn-secondary" data-go="/new?date=' + date + '">' + (scheduled ? "기출 입력" : "시험일 넣기") + "</button>" +
+      "</div>" +
       tabBar("predict");
     bindNav();
     function goHome(nextDate, nextRound) {
@@ -1504,11 +1516,9 @@
 
     root.innerHTML =
       '<div class="topbar"><button class="ghost" data-go="' + lastPredictPath + '">닫기</button><h2>일자 예상</h2><button class="ghost" data-go="/new?date=' + date + '">입력</button></div>' +
-      '<p class="site">' + escapeHtml(state.site) + " · 같은 회차에 시험일 여러 날</p>" +
-      '<div class="field"><span>날짜</span></div>' +
-      dateFieldHtml("day-date", date) +
-      '<label class="field" style="margin-top:12px"><span>회차</span><input id="day-round" type="number" min="1" max="366" value="' + session + '"></label>' +
-      '<p class="lede" style="margin-top:12px">' + formatKor(date) + " · " + sessionLabel(session) + (scheduled && isFutureDate(date) && !actualId ? " · 진행 전" : "") + " · 시험일 " + roundExamDays.length + "날" + (scheduled ? "" : " · 이날은 제외") + "</p>" +
+      '<p class="site">' + escapeHtml(state.site) + "</p>" +
+      dateFieldHtml("day-date", date, "day-round", session) +
+      '<p class="lede tight">' + WEEK[weekdayOf(date)] + (scheduled && isFutureDate(date) && !actualId ? " · 진행 전" : "") + " · 시험일 " + roundExamDays.length + "날" + (scheduled ? "" : " · 이날은 제외") + "</p>" +
       '<p class="section-title">이 날짜</p>' + actualHtml +
       '<p class="section-title">이번 회차 나온 품목</p>' +
       (Object.keys(used).length
