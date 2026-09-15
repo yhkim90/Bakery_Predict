@@ -36,6 +36,8 @@
       font-size: 17px;
       line-height: 1.45;
       -webkit-font-smoothing: antialiased;
+      word-break: keep-all;
+      overflow-wrap: break-word;
     }
     body {
       padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
@@ -59,6 +61,7 @@
     .topbar h1, .topbar h2 { flex: 1; margin: 0; font-size: 20px; font-weight: 700; text-align: center; }
     .ghost { min-width: 52px; min-height: var(--tap); color: var(--accent); font-weight: 600; font-size: 15px; }
     .lede { margin: 0 0 16px; color: var(--muted); font-size: 14px; word-break: keep-all; overflow-wrap: break-word; }
+    .lede-line { display: block; }
     .site { margin: 0 0 16px; color: var(--accent); font-size: 13px; font-weight: 700; }
     .card {
       padding: 14px 16px; border-radius: var(--radius);
@@ -227,7 +230,7 @@
 (function () {
   var STORAGE_KEY = "bakery-predict-practical-v1";
   var SEED_HASH_KEY = STORAGE_KEY + "-seed-hash";
-  var APP_VERSION = "20260915d";
+  var APP_VERSION = "20260915e";
   var WEEK = ["일", "월", "화", "수", "목", "금", "토"];
 
   var ITEMS = [
@@ -1360,7 +1363,7 @@
     });
     root.innerHTML =
       '<div class="topbar"><span class="ghost"></span><h1>기출 기록</h1><button class="ghost" data-go="/new">추가</button></div>' +
-      '<p class="lede">' + escapeHtml(state.site) + " · 같은 회차에 시험일이 여러 날 있습니다.<br>" + yearOf(todayStr()) + "년은 " + (lastSession(yearOf(todayStr())) || 0) + "회까지 있습니다.</p>" +
+      '<p class="lede"><span class="lede-line">' + escapeHtml(state.site) + " · 같은 회차에 시험일이 여러 날 있습니다.</span><span class="lede-line">' + yearOf(todayStr()) + "년은 " + (lastSession(yearOf(todayStr())) || 0) + "회까지 있습니다.</span></p>" +
       (rows.length ? '<div class="card">' + rows.map(function (row) {
         return '<button class="item-link" data-go="/edit/' + row.id + '"><div><strong>' + sessionLabel(row.session) + " · " + formatKor(row.date) + "</strong><span>" +
           escapeHtml(itemName(row.itemId)) + '</span></div><span class="pill">수정</span></button>';
