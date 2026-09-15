@@ -127,21 +127,22 @@
     }
     .date-wrap {
       position: relative; margin: 0 0 12px;
-      width: 100%; max-width: 100%; overflow: hidden;
+      width: 100%; max-width: 100%; height: 48px; max-height: 48px;
+      overflow: hidden; border-radius: 12px;
     }
     .date-face {
-      min-height: 48px; padding: 12px 44px 12px 14px;
+      height: 48px; padding: 0 44px 0 14px;
       border: 1px solid #d9c9ba; border-radius: 12px; background: #fff;
       color: var(--accent); font-weight: 700; font-size: 17px;
       font-variant-numeric: tabular-nums; letter-spacing: 0.03em;
       display: flex; align-items: center;
     }
     .date-wrap input[type="date"] {
-      position: absolute; inset: 0; z-index: 2;
-      width: 100%; max-width: 100%; height: 100%;
+      position: absolute; left: 0; top: 0; z-index: 2;
+      width: 100%; max-width: 100%; height: 48px; max-height: 48px;
       margin: 0; padding: 0; border: 0; border-radius: 12px;
-      opacity: 0.01; background: transparent; color: transparent;
-      -webkit-text-fill-color: transparent; min-width: 0;
+      opacity: 0; background: transparent;
+      -webkit-appearance: none; appearance: none;
     }
     .date-wrap .cal-ico {
       position: absolute; right: 12px; top: 0; bottom: 0; width: 22px; z-index: 1;
@@ -152,8 +153,7 @@
       stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
     }
     .date-wrap input[type="date"]::-webkit-calendar-picker-indicator {
-      position: absolute; inset: 0; width: 100%; height: 100%;
-      opacity: 0; margin: 0; padding: 0;
+      opacity: 0; width: 100%; height: 48px; margin: 0; padding: 0;
     }
     textarea { min-height: 180px; resize: vertical; line-height: 1.5; }
     .sample {
@@ -230,7 +230,7 @@
 (function () {
   var STORAGE_KEY = "bakery-predict-practical-v1";
   var SEED_HASH_KEY = STORAGE_KEY + "-seed-hash";
-  var APP_VERSION = "20260915e";
+  var APP_VERSION = "20260915g";
   var WEEK = ["일", "월", "화", "수", "목", "금", "토"];
 
   var ITEMS = [
@@ -1105,6 +1105,19 @@
 
   function go(hash) { location.hash = hash; }
 
+  function hardReload() {
+    var url;
+    try {
+      url = new URL(location.href);
+      url.searchParams.set("v", APP_VERSION);
+      url.searchParams.set("_", String(Date.now()));
+    } catch (e) {
+      location.reload();
+      return;
+    }
+    location.replace(url.toString());
+  }
+
   function tabBar(active) {
     return '<nav class="tabbar">' +
       '<button type="button" class="' + (active === "predict" ? "on" : "") + '" data-go="' + lastPredictPath + '">예상</button>' +
@@ -1145,6 +1158,12 @@
     root.querySelectorAll("[data-go]").forEach(function (el) {
       el.addEventListener("click", function () { go(el.getAttribute("data-go")); });
     });
+    root.querySelectorAll("[data-reload]").forEach(function (el) {
+      el.addEventListener("click", function (e) {
+        e.preventDefault();
+        hardReload();
+      });
+    });
   }
 
   function renderHome() {
@@ -1168,7 +1187,7 @@
     var roundRows = recordsInRound(year, roundNo);
     var isToday = date === todayStr();
     root.innerHTML =
-      '<div class="topbar"><span class="ghost"></span><h1>일자별 예상</h1><button class="ghost" data-go="/settings">시험장</button></div>' +
+      '<div class="topbar"><button class="ghost" type="button" data-reload>새로고침</button><h1>일자별 예상</h1><button class="ghost" data-go="/settings">시험장</button></div>' +
       '<p class="site">' + escapeHtml(state.site) + " · 제빵 실기 · " + year + "년 " + (latest ? sessionLabel(latest) : "") + "</p>" +
       '<div class="field"><span>조회 날짜</span></div>' +
       dateFieldHtml("home-date", date) +
@@ -1566,6 +1585,9 @@
       '<p class="lede">회사 PC에서는 이 브라우저에만 저장됩니다. GitHub나 외부 서버로 보내지 않습니다.</p>' +
       '<label class="field"><span>시험장 이름</span><input id="site" type="text" maxlength="40" value="' + escapeHtml(state.site) + '"></label>' +
       '<button class="btn btn-primary" id="save-site">이름 저장</button>' +
+      '<p class="section-title">화면 업데이트</p>' +
+      '<p class="muted">홈 화면 아이콘은 예전 화면을 붙잡는 경우가 있습니다. 버튼을 누르면 새 파일을 다시 받습니다.</p>' +
+      '<button class="btn btn-secondary" type="button" data-reload>화면 새로 받기</button>' +
       '<p class="section-title">기출 TXT</p>' +
       '<p class="muted">메모장에서 모아 둔 기출을 올리거나, 지금 기록을 TXT로 받습니다.</p>' +
       '<button class="btn btn-secondary" data-go="/upload">TXT 일괄 넣기</button>' +
@@ -1637,8 +1659,14 @@
     renderHome();
   }
 
-  window.addEventListener("hashchange", render);
-  render();
+  window.addEventListener("hashchange", function () {
+    try { render(); } catch (e) {}
+  });
+  try {
+    render();
+  } catch (e) {
+    if (root) root.innerHTML = '<p class="lede">화면을 불러오지 못했습니다. 사파리에서 주소를 다시 열어 주세요.</p>';
+  }
 
   if (/^https?:$/.test(location.protocol)) {
     ["기출_양식.txt", "기출.txt"].reduce(function (wait, name) {
