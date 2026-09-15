@@ -273,7 +273,7 @@
 (function () {
   var STORAGE_KEY = "bakery-predict-practical-v1";
   var SEED_HASH_KEY = STORAGE_KEY + "-seed-hash";
-  var APP_VERSION = "20260916i";
+  var APP_VERSION = "20260916j";
   var WEEK = ["일", "월", "화", "수", "목", "금", "토"];
 
   var ITEMS = [
@@ -1399,7 +1399,7 @@
     var c = state.calib;
     if (!c || c.n < 8) return "";
     var pct = function (n) { return Math.round(100 * n / c.n); };
-    return "보정 " + pct(c.top1) + "% / 3위 안 " + pct(c.top3) + "% (" + c.n + "날)";
+    return "1위 적중 " + pct(c.top1) + "% · 3위 안 " + pct(c.top3) + "% · 시험일 " + c.n + "번";
   }
 
   function predictPath(date, session) {
@@ -1945,7 +1945,7 @@
       '<p class="section-title">예측 보정</p>' +
       '<p class="muted">확인된 기출마다 그날 이전 기록만으로 예상을 다시 매겨, 실제 출제와 비교해 가중치를 조금씩 고칩니다.</p>' +
       (state.calib && state.calib.n
-        ? '<p class="lede tight">1위 ' + Math.round(100 * state.calib.top1 / state.calib.n) + "% · 3위 안 " + Math.round(100 * state.calib.top3 / state.calib.n) + "% · 5위 안 " + Math.round(100 * state.calib.top5 / state.calib.n) + "% (" + state.calib.n + "날)</p>"
+        ? '<p class="lede tight">1위 ' + Math.round(100 * state.calib.top1 / state.calib.n) + "% · 3위 안 " + Math.round(100 * state.calib.top3 / state.calib.n) + "% · 5위 안 " + Math.round(100 * state.calib.top5 / state.calib.n) + "% · 시험일 " + state.calib.n + "번</p>"
         : '<p class="muted">기출이 더 쌓이면 적중률이 표시됩니다.</p>') +
       '<p class="section-title">기출 TXT</p>' +
       '<p class="muted">메모장에서 모아 둔 기출을 올리거나, 지금 기록을 TXT로 받습니다.</p>' +
