@@ -46,7 +46,7 @@
       color: var(--text);
     }
     button { appearance: none; border: 0; background: none; padding: 0; cursor: pointer; }
-    .app { width: min(430px, 100%); margin: 0 auto; padding: 8px 20px 108px; }
+    .app { width: min(430px, 100%); max-width: 100%; margin: 0 auto; padding: 8px 20px 108px; overflow-x: hidden; }
     .tabbar {
       position: fixed; left: 0; right: 0; bottom: 0;
       display: grid; grid-template-columns: repeat(4, 1fr);
@@ -116,17 +116,32 @@
     }
     .date-nav {
       display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0 0 8px;
+      width: 100%; max-width: 100%;
     }
     .date-nav .ghost {
       min-width: 0; width: 100%; background: #efe4d8; border-radius: 12px;
       font-weight: 700; color: var(--accent);
     }
-    .date-wrap { position: relative; margin: 0 0 12px; }
+    .date-wrap {
+      position: relative; margin: 0 0 12px;
+      width: 100%; max-width: 100%; overflow: hidden;
+    }
+    .date-face {
+      min-height: 48px; padding: 12px 44px 12px 14px;
+      border: 1px solid #d9c9ba; border-radius: 12px; background: #fff;
+      color: var(--accent); font-weight: 700; font-size: 17px;
+      font-variant-numeric: tabular-nums; letter-spacing: 0.03em;
+      display: flex; align-items: center;
+    }
     .date-wrap input[type="date"] {
-      display: block; width: 100%; min-width: 0; padding-right: 44px; position: relative;
+      position: absolute; inset: 0; z-index: 2;
+      width: 100%; max-width: 100%; height: 100%;
+      margin: 0; padding: 0; border: 0; border-radius: 12px;
+      opacity: 0.01; background: transparent; color: transparent;
+      -webkit-text-fill-color: transparent; min-width: 0;
     }
     .date-wrap .cal-ico {
-      position: absolute; right: 12px; top: 0; bottom: 0; width: 22px;
+      position: absolute; right: 12px; top: 0; bottom: 0; width: 22px; z-index: 1;
       display: flex; align-items: center; pointer-events: none; color: var(--accent);
     }
     .date-wrap .cal-ico svg {
@@ -134,8 +149,8 @@
       stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
     }
     .date-wrap input[type="date"]::-webkit-calendar-picker-indicator {
-      opacity: 0; position: absolute; right: 0; top: 0; width: 44px; height: 100%;
-      margin: 0; padding: 0; cursor: pointer;
+      position: absolute; inset: 0; width: 100%; height: 100%;
+      opacity: 0; margin: 0; padding: 0;
     }
     textarea { min-height: 180px; resize: vertical; line-height: 1.5; }
     .sample {
@@ -212,7 +227,7 @@
 (function () {
   var STORAGE_KEY = "bakery-predict-practical-v1";
   var SEED_HASH_KEY = STORAGE_KEY + "-seed-hash";
-  var APP_VERSION = "20260915c";
+  var APP_VERSION = "20260915d";
   var WEEK = ["일", "월", "화", "수", "목", "금", "토"];
 
   var ITEMS = [
@@ -1101,6 +1116,7 @@
       '<button class="ghost" type="button" id="next-day">다음</button>' +
       "</div>" +
       '<div class="date-wrap">' +
+        '<div class="date-face">' + escapeHtml(String(date || "").replace(/-/g, ".")) + "</div>" +
         '<input id="' + id + '" type="date" value="' + date + '">' +
         '<span class="cal-ico" aria-hidden="true">' +
           '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2.5"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>' +
