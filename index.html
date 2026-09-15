@@ -125,6 +125,7 @@
       min-width: 0; width: 100%; background: #efe4d8; border-radius: 12px;
       font-weight: 700; color: var(--accent);
     }
+    .date-nav .ghost:disabled { opacity: 0.35; cursor: default; }
     .date-wrap {
       position: relative; margin: 0 0 12px;
       width: 100%; max-width: 100%; height: 48px; max-height: 48px;
@@ -230,7 +231,7 @@
 (function () {
   var STORAGE_KEY = "bakery-predict-practical-v1";
   var SEED_HASH_KEY = STORAGE_KEY + "-seed-hash";
-  var APP_VERSION = "20260915h";
+  var APP_VERSION = "20260916a";
   var WEEK = ["일", "월", "화", "수", "목", "금", "토"];
 
   var ITEMS = [
@@ -382,6 +383,9 @@
       var parsed = JSON.parse(raw);
       if (!parsed.records) parsed.records = [];
       if (!parsed.site) parsed.site = "시험장 1곳";
+      parsed.records.forEach(function (row) {
+        if (!row.itemId || row.itemId === "") row.itemId = "unknown";
+      });
       return parsed;
     } catch (e) {
       return defaultState();
@@ -415,6 +419,10 @@
     "미확인": "unknown",
     "확인안됨": "unknown",
     "확인불가": "unknown",
+    "공란": "unknown",
+    "빈칸": "unknown",
+    "미상": "unknown",
+    "미기입": "unknown",
     "불명": "unknown",
     "모름": "unknown",
     "?": "unknown",
@@ -562,8 +570,8 @@
         return;
       }
       if (!itemId) {
-        errors.push((idx + 1) + "행: 품목 모름 (" + itemText + ")");
-        return;
+        itemId = "unknown";
+        if (itemText && !note) note = itemText;
       }
       ok.push({
         id: uid(),
@@ -581,13 +589,14 @@
       "# 시험장: " + state.site,
       "# 형식: 날짜  회차  품목",
       "# 같은 회차에 시험일이 여러 날 있습니다.",
-      "# 품목을 모르면 비우거나 미확인, 시험 없으면 미실시"
+      "# 품목을 모르면 공란이나 미확인, 시험 없으면 미실시"
     ];
     state.records.slice().sort(function (a, b) {
       if (a.session !== b.session) return a.session - b.session;
       return a.date < b.date ? -1 : 1;
     }).forEach(function (row) {
-      var line = row.date + "\t" + row.session + "회\t" + itemName(row.itemId);
+      var name = row.itemId === "unknown" ? "" : itemName(row.itemId);
+      var line = row.date + "\t" + row.session + "회\t" + name;
       if (row.note) line += "\t" + row.note;
       lines.push(line);
     });
@@ -667,6 +676,89 @@
     });
     out.sort();
     return out;
+  }
+
+  function isScheduledExamRow(row) {
+    return !!(row && row.itemId !== "none");
+  }
+
+  function scheduledRecords() {
+    return state.records.filter(isScheduledExamRow);
+  }
+
+  function allExamDates() {
+    return uniqueSortedDates(scheduledRecords());
+  }
+
+  function isExamDate(date) {
+    return state.records.some(function (row) {
+      return row.date === date && isScheduledExamRow(row);
+    });
+  }
+
+  function sessionForDate(date) {
+    var hit = state.records.find(function (row) {
+      return row.date === date && isScheduledExamRow(row);
+    });
+    if (hit) return Number(hit.session);
+    var any = state.records.find(function (row) { return row.date === date; });
+    if (any) return Number(any.session);
+    return inferSession(date);
+  }
+
+  function examDatesInRound(year, session) {
+    return uniqueSortedDates(state.records.filter(function (row) {
+      return yearOf(row.date) === String(year) && Number(row.session) === Number(session) && isScheduledExamRow(row);
+    }));
+  }
+
+  function prevExamDate(date) {
+    var dates = allExamDates();
+    var prev = "";
+    var i;
+    for (i = 0; i < dates.length; i++) {
+      if (dates[i] < date) prev = dates[i];
+      else break;
+    }
+    return prev;
+  }
+
+  function nextExamDate(date) {
+    var dates = allExamDates();
+    var i;
+    for (i = 0; i < dates.length; i++) {
+      if (dates[i] > date) return dates[i];
+    }
+    return "";
+  }
+
+  function defaultPredictDate() {
+    var dates = allExamDates();
+    var today = todayStr();
+    if (!dates.length) return today;
+    if (isExamDate(today)) return today;
+    var upcoming = nextExamDate(today);
+    if (upcoming) return upcoming;
+    return dates[dates.length - 1];
+  }
+
+  function pickExamDateInRound(year, session, preferredDate) {
+    var dates = examDatesInRound(year, session);
+    if (!dates.length) return "";
+    if (preferredDate && dates.indexOf(preferredDate) !== -1) return preferredDate;
+    var i;
+    for (i = 0; i < dates.length; i++) {
+      if (dates[i] >= (preferredDate || todayStr())) return dates[i];
+    }
+    return dates[dates.length - 1];
+  }
+
+  function scheduleEmptyHtml() {
+    return '<div class="empty card">회차 시험일을 먼저 넣으면 그 날짜만 예상합니다. 품목을 모르면 공란이나 미확인으로 넣으면 됩니다.</div>';
+  }
+
+  function notExamHtml() {
+    return '<div class="empty card">이날은 입력된 시험일이 아닙니다. 이전·다음으로 시험일만 건너뛰거나, 아래 입력으로 일정을 넣으면 됩니다.</div>';
   }
 
   function countSessionsBetween(dates, afterExclusive, beforeExclusive) {
@@ -834,7 +926,7 @@
     });
     var examPrior = prior.filter(function (row) { return isExamItemId(row.itemId); });
     var seq = examPrior.map(function (row) { return row.itemId; });
-    var examDates = uniqueSortedDates(prior);
+    var examDates = uniqueSortedDates(prior.filter(isScheduledExamRow));
     var datesByItem = {};
     examItems().forEach(function (item) { datesByItem[item.id] = []; });
     examPrior.forEach(function (row) {
@@ -1058,7 +1150,8 @@
   }
 
   function predict(date, session) {
-    session = session || inferSession(date);
+    if (!isExamDate(date)) return [];
+    session = session || sessionForDate(date);
     var ctx = buildPredictContext(date, session);
     var ranked = examItems().map(function (item) {
       var result = scoreItem(item, date, session, ctx);
@@ -1166,16 +1259,32 @@
     });
   }
 
+  function bindExamDayButtons(date, goToDate) {
+    var prev = document.getElementById("prev-day");
+    var next = document.getElementById("next-day");
+    var prevDate = prevExamDate(date);
+    var nextDate = nextExamDate(date);
+    prev.disabled = !prevDate;
+    next.disabled = !nextDate;
+    prev.addEventListener("click", function () {
+      if (prevDate) goToDate(prevDate);
+    });
+    next.addEventListener("click", function () {
+      if (nextDate) goToDate(nextDate);
+    });
+  }
+
   function renderHome() {
     var parsed = parseHash();
-    var date = parseLooseDate(parsed.params.get("d")) || todayStr();
+    var date = parseLooseDate(parsed.params.get("d")) || defaultPredictDate();
     var pinnedRound = parseSession(parsed.params.get("r"));
-    var roundNo = pinnedRound || inferSession(date);
+    var roundNo = pinnedRound || sessionForDate(date);
     lastPredictDate = date;
     lastPredictSession = roundNo;
-    lastPredictPath = predictPath(date, pinnedRound ? roundNo : inferSession(date));
+    lastPredictPath = predictPath(date, pinnedRound ? roundNo : sessionForDate(date));
     var year = yearOf(date);
-    var ranked = predict(date, roundNo);
+    var scheduled = isExamDate(date);
+    var ranked = scheduled ? predict(date, roundNo) : [];
     var monthRows = recordsInMonth(monthStr(date));
     var unique = {};
     monthRows.forEach(function (row) {
@@ -1185,23 +1294,27 @@
     var top = ranked.slice(0, 5);
     var latest = lastSession(year);
     var roundRows = recordsInRound(year, roundNo);
+    var roundExamDays = roundRows.filter(isScheduledExamRow);
     var isToday = date === todayStr();
+    var rankHtml = !allExamDates().length
+      ? scheduleEmptyHtml()
+      : (scheduled ? renderRankList(top) : notExamHtml());
     root.innerHTML =
       '<div class="topbar"><button class="ghost" type="button" data-reload>새로고침</button><h1>일자별 예상</h1><button class="ghost" data-go="/settings">시험장</button></div>' +
       '<p class="site">' + escapeHtml(state.site) + " · 제빵 실기 · " + year + "년 " + (latest ? sessionLabel(latest) : "") + "</p>" +
       '<div class="field"><span>조회 날짜</span></div>' +
       dateFieldHtml("home-date", date) +
       '<label class="field"><span>회차</span><input id="home-round" type="number" min="1" max="366" value="' + roundNo + '"></label>' +
-      '<p class="lede" style="margin-top:12px">' + formatKor(date) + "</p>" +
+      '<p class="lede" style="margin-top:12px">' + formatKor(date) + (scheduled ? " · 시험일" : " · 시험일 아님") + "</p>" +
       '<div class="stats">' +
         '<div class="card"><small>조회 회차</small><strong>' + sessionLabel(roundNo) + "</strong></div>" +
-        '<div class="card"><small>이번 회차 일수</small><strong>' + roundRows.length + "</strong></div>" +
+        '<div class="card"><small>이번 회차 일수</small><strong>' + roundExamDays.length + "</strong></div>" +
         '<div class="card"><small>이번 달 품목</small><strong>' + Object.keys(unique).length + "</strong></div>" +
       "</div>" +
-      (state.records.length ? renderRankList(top) : '<div class="empty card">아직 기출이 없습니다. 회차와 날짜를 넣으면 예상이 생깁니다.</div>') +
+      rankHtml +
       (isToday ? "" : '<button class="btn btn-secondary" type="button" id="go-today">오늘로</button>') +
       '<button class="btn btn-primary" data-go="/day/' + date + (pinnedRound ? "?r=" + roundNo : "") + '">' + (isToday ? "오늘 자세히" : "이 날짜 자세히") + "</button>" +
-      '<button class="btn btn-secondary" data-go="/new?date=' + date + '">기출 입력</button>' +
+      '<button class="btn btn-secondary" data-go="/new?date=' + date + '">' + (scheduled ? "기출 입력" : "시험일 넣기") + "</button>" +
       tabBar("predict");
     bindNav();
     function goHome(nextDate, nextRound) {
@@ -1209,23 +1322,21 @@
     }
     document.getElementById("home-date").addEventListener("change", function () {
       if (!this.value) return;
-      goHome(this.value, inferSession(this.value));
+      goHome(this.value, sessionForDate(this.value));
     });
-    document.getElementById("prev-day").addEventListener("click", function () {
-      var next = shiftDate(date, -1);
-      goHome(next, inferSession(next));
-    });
-    document.getElementById("next-day").addEventListener("click", function () {
-      var next = shiftDate(date, 1);
-      goHome(next, inferSession(next));
+    bindExamDayButtons(date, function (next) {
+      goHome(next, sessionForDate(next));
     });
     document.getElementById("home-round").addEventListener("change", function () {
       var n = parseSession(this.value);
       if (!n) return;
-      go(predictPath(date, n));
+      var pick = pickExamDateInRound(yearOf(date), n, date) || date;
+      go(predictPath(pick, n));
     });
     var todayBtn = document.getElementById("go-today");
-    if (todayBtn) todayBtn.addEventListener("click", function () { go("/"); });
+    if (todayBtn) todayBtn.addEventListener("click", function () {
+      goHome(todayStr(), sessionForDate(todayStr()));
+    });
   }
 
   function renderRankList(rows) {
@@ -1241,16 +1352,18 @@
 
   function renderDay() {
     var parsed = parseHash();
-    var date = parseLooseDate(parsed.parts[1]) || todayStr();
+    var date = parseLooseDate(parsed.parts[1]) || defaultPredictDate();
     var actual = recordsOn(date);
     var pinnedRound = parseSession(parsed.params.get("r"));
-    var session = pinnedRound || (actual.length ? actual[0].session : inferSession(date));
+    var session = pinnedRound || sessionForDate(date);
+    var scheduled = isExamDate(date);
     lastPredictDate = date;
     lastPredictSession = session;
-    lastPredictPath = predictPath(date, pinnedRound ? session : inferSession(date));
-    var ranked = predict(date, session);
+    lastPredictPath = predictPath(date, pinnedRound ? session : sessionForDate(date));
+    var ranked = scheduled ? predict(date, session) : [];
     var top = ranked.slice(0, 8);
     var roundRows = recordsInRound(yearOf(date), session);
+    var roundExamDays = roundRows.filter(isScheduledExamRow);
     var used = {};
     var unknownCount = 0;
     var skipCount = 0;
@@ -1266,7 +1379,10 @@
             (row.note ? '<div class="muted">' + escapeHtml(row.note) + "</div>" : "") +
             '</div><button class="ghost" data-go="/edit/' + row.id + '">수정</button></div>';
         }).join("") + "</div>"
-      : '<p class="muted">이 날짜 확정 기출은 아직 없습니다.</p>';
+      : '<p class="muted">이 날짜는 아직 일정에 없습니다. 품목을 모르면 공란이나 미확인으로 넣으면 됩니다.</p>';
+    var rankHtml = !allExamDates().length
+      ? scheduleEmptyHtml()
+      : (scheduled ? renderRankList(top) : notExamHtml());
 
     root.innerHTML =
       '<div class="topbar"><button class="ghost" data-go="' + lastPredictPath + '">닫기</button><h2>일자 예상</h2><button class="ghost" data-go="/new?date=' + date + '">입력</button></div>' +
@@ -1274,7 +1390,7 @@
       '<div class="field"><span>날짜</span></div>' +
       dateFieldHtml("day-date", date) +
       '<label class="field" style="margin-top:12px"><span>회차</span><input id="day-round" type="number" min="1" max="366" value="' + session + '"></label>' +
-      '<p class="lede" style="margin-top:12px">' + formatKor(date) + " · " + sessionLabel(session) + " · 시험일 " + roundRows.length + "날</p>" +
+      '<p class="lede" style="margin-top:12px">' + formatKor(date) + " · " + sessionLabel(session) + " · 시험일 " + roundExamDays.length + "날" + (scheduled ? "" : " · 이날은 제외") + "</p>" +
       '<p class="section-title">이 날짜</p>' + actualHtml +
       '<p class="section-title">이번 회차 나온 품목</p>' +
       (Object.keys(used).length
@@ -1286,23 +1402,21 @@
         ? '<div class="pills">' + missing.map(function (item) { return '<span class="pill">' + escapeHtml(item.name) + "</span>"; }).join("") + "</div>"
         : '<p class="muted">확인된 품목 기준으로는 다 나왔습니다.</p>') +
       '<p class="section-title">출제 예상</p>' +
-      renderRankList(top) +
+      rankHtml +
       tabBar("predict");
     bindNav();
     document.getElementById("day-date").addEventListener("change", function () {
       if (!this.value) return;
       go("/day/" + this.value);
     });
-    document.getElementById("prev-day").addEventListener("click", function () {
-      go("/day/" + shiftDate(date, -1));
-    });
-    document.getElementById("next-day").addEventListener("click", function () {
-      go("/day/" + shiftDate(date, 1));
+    bindExamDayButtons(date, function (next) {
+      go("/day/" + next);
     });
     document.getElementById("day-round").addEventListener("change", function () {
       var n = parseSession(this.value);
       if (!n) return;
-      go("/day/" + date + "?r=" + n);
+      var pick = pickExamDateInRound(yearOf(date), n, date) || date;
+      go("/day/" + pick + "?r=" + n);
     });
   }
 
@@ -1395,14 +1509,14 @@
   }
 
   function renderItems() {
-    var date = lastPredictDate || todayStr();
-    var session = lastPredictSession || inferSession(date);
-    var ranked = predict(date, session);
+    var date = (lastPredictDate && isExamDate(lastPredictDate)) ? lastPredictDate : defaultPredictDate();
+    var session = lastPredictSession || sessionForDate(date);
+    var ranked = isExamDate(date) ? predict(date, session) : [];
     var byId = {};
     ranked.forEach(function (row, i) { byId[row.item.id] = { rank: i + 1, row: row }; });
     root.innerHTML =
       '<div class="topbar"><span class="ghost"></span><h1>제빵 품목</h1><span class="ghost"></span></div>' +
-      '<p class="lede">' + formatKor(date) + " 기준 순위입니다.</p>" +
+      '<p class="lede">' + (isExamDate(date) ? formatKor(date) + " 시험일 기준 순위입니다." : "입력된 시험일이 없어 순위를 만들지 않았습니다.") + "</p>" +
       '<div class="card">' + examItems().map(function (item) {
           var info = byId[item.id];
           var s = info ? info.row.stats : statsFor(item.id, date, session);
@@ -1430,7 +1544,7 @@
     return {
       id: uid(),
       date: date,
-      session: inferSession(date),
+      session: sessionForDate(date),
       itemId: "unknown",
       note: ""
     };
@@ -1455,7 +1569,7 @@
       '<div class="stack">' +
         '<label class="field"><span>시험일</span><input id="f-date" type="date" value="' + draft.date + '"></label>' +
         '<label class="field"><span>회차</span><input id="f-session" type="number" min="1" max="366" step="1" value="' + Number(draft.session) + '"></label>' +
-        '<p class="muted">1회에 1/12, 1/13처럼 시험일이 여러 날 있습니다. 품목을 모르면 미확인, 시험이 없으면 미실시.</p>' +
+        '<p class="muted">1회에 1/12, 1/13처럼 시험일이 여러 날 있습니다. 품목을 모르면 공란·미확인, 시험이 없으면 미실시.</p>' +
         '<div class="field"><span>출제 품목</span><div class="stack" id="f-items">' +
           ITEMS.map(function (item) {
             return '<button type="button" class="choice' + (draft.itemId === item.id ? " on" : "") + '" data-item="' + item.id + '">' +
@@ -1521,7 +1635,7 @@
       '<div class="topbar"><button class="ghost" data-go="/log">닫기</button><h2>TXT 일괄</h2><span class="ghost"></span></div>' +
       '<p class="lede">파일을 고르면 바로 반영됩니다. 붙여넣기만 한 경우에는 반영을 눌러 주세요.</p>' +
       '<p class="section-title">형식</p>' +
-      '<pre class="sample">시험장: 남부\n2026-01-12 1회 밤식빵\n2026-01-13 1회 소보로빵\n2026-01-14 1회 미확인\n2026-01-15 1회 미실시</pre>' +
+      '<pre class="sample">시험장: 남부\n2026-01-12 1회 밤식빵\n2026-01-13 1회 소보로빵\n2026-01-14 1회\n2026-01-15 1회 미실시</pre>' +
       '<label class="field" style="margin-top:16px"><span>붙여넣기</span>' +
       '<textarea id="bulk" placeholder="여기에 붙여넣거나 아래에서 TXT를 고르세요"></textarea></label>' +
       '<label class="btn btn-secondary" for="txt-file">TXT 파일 선택</label>' +
@@ -1567,12 +1681,12 @@
     document.getElementById("sample").addEventListener("click", function () {
       downloadText("기출_양식.txt",
         "# 같은 회차에 시험일이 여러 날 있습니다. 1회 1/12, 1/13 ...\n" +
-        "# 품목 모르면 미확인(또는 빈칸), 시험 없으면 미실시\n" +
+        "# 품목 모르면 공란(빈칸)이나 미확인, 시험 없으면 미실시\n" +
         "\n" +
         "시험장: " + state.site + "\n" +
         "2026-01-12 1회 밤식빵\n" +
         "2026-01-13 1회 소보로빵\n" +
-        "2026-01-14 1회 미확인\n" +
+        "2026-01-14 1회\n" +
         "2026-01-15 1회 미실시\n");
     });
     document.getElementById("apply").addEventListener("click", function () {
