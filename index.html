@@ -191,12 +191,10 @@
       vertical-align: middle;
     }
     .actual {
-      margin: 0 0 12px; padding: 14px 16px; border-radius: var(--radius);
-      background: #efe4d8; border: 1px solid var(--accent);
+      margin: 0 0 12px; color: var(--accent); font-size: 15px; font-weight: 700;
+      word-break: keep-all;
     }
-    .actual small { display: block; color: var(--muted); font-size: 12px; font-weight: 700; }
-    .actual strong { display: block; margin-top: 4px; font-size: 22px; }
-    .actual span { display: block; margin-top: 4px; color: var(--accent); font-size: 14px; font-weight: 700; }
+    .actual.soon { color: var(--muted); font-weight: 600; }
     .bar { height: 6px; border-radius: 99px; background: #efe4d8; margin-top: 8px; overflow: hidden; }
     .bar i { display: block; height: 100%; background: var(--accent); }
     .cal-head {
@@ -252,7 +250,7 @@
 (function () {
   var STORAGE_KEY = "bakery-predict-practical-v1";
   var SEED_HASH_KEY = STORAGE_KEY + "-seed-hash";
-  var APP_VERSION = "20260916b";
+  var APP_VERSION = "20260916d";
   var WEEK = ["일", "월", "화", "수", "목", "금", "토"];
 
   var ITEMS = [
@@ -276,6 +274,7 @@
     { id: "grissini", name: "그리시니", note: "가늘고 균일" },
     { id: "bagel", name: "베이글", note: "데치기" },
     { id: "sausage", name: "소시지빵", note: "감기·밀봉" },
+    { id: "pending", name: "진행 전", skip: true },
     { id: "unknown", name: "미확인", skip: true },
     { id: "none", name: "미실시", skip: true }
   ];
@@ -289,6 +288,37 @@
   function todayStr() {
     var d = new Date();
     return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+  }
+
+  function isFutureDate(date) {
+    return date > todayStr();
+  }
+
+  function isBlankItemId(id) {
+    return !id || id === "unknown" || id === "pending";
+  }
+
+  function blankItemForDate(date) {
+    return isFutureDate(date) ? "pending" : "unknown";
+  }
+
+  function normalizeRecord(row) {
+    if (!row) return row;
+    if (isBlankItemId(row.itemId)) row.itemId = blankItemForDate(row.date);
+    return row;
+  }
+
+  function normalizeRecords() {
+    var changed = false;
+    state.records.forEach(function (row) {
+      if (!isBlankItemId(row.itemId)) return;
+      var next = blankItemForDate(row.date);
+      if (row.itemId !== next) {
+        row.itemId = next;
+        changed = true;
+      }
+    });
+    if (changed) saveState();
   }
 
   function monthStr(d) {
@@ -404,9 +434,7 @@
       var parsed = JSON.parse(raw);
       if (!parsed.records) parsed.records = [];
       if (!parsed.site) parsed.site = "시험장 1곳";
-      parsed.records.forEach(function (row) {
-        if (!row.itemId || row.itemId === "") row.itemId = "unknown";
-      });
+      parsed.records.forEach(normalizeRecord);
       return parsed;
     } catch (e) {
       return defaultState();
@@ -430,6 +458,7 @@
   }
 
   function shortItemName(id) {
+    if (id === "pending") return "진행전";
     if (!id || id === "unknown") return "공란";
     if (id === "none") return "미실시";
     var name = itemName(id);
@@ -466,10 +495,17 @@
   function actualBannerHtml(itemId, ranked) {
     if (!itemId) return "";
     var rank = rankOfItem(ranked, itemId);
-    return '<div class="actual"><small>이날 실제 출제</small><strong>' +
-      escapeHtml(itemName(itemId)) + "</strong>" +
-      (rank ? "<span>예상 " + rank + "위</span>" : "") +
-      "</div>";
+    return '<p class="actual">출제 : ' + escapeHtml(itemName(itemId)) +
+      (rank ? " (예상 " + rank + "위)" : "") + "</p>";
+  }
+
+  function statusBannerHtml(date, ranked) {
+    var actualId = confirmedItemId(date);
+    if (actualId) return actualBannerHtml(actualId, ranked);
+    if (isExamDate(date) && isFutureDate(date)) {
+      return '<p class="actual soon">진행 전 : 출제 예상</p>';
+    }
+    return "";
   }
 
   var ITEM_ALIASES = {
@@ -485,6 +521,9 @@
     "미실시": "none",
     "휴강": "none",
     "없음": "none",
+    "진행전": "pending",
+    "진행 전": "pending",
+    "예정": "pending",
     "미확인": "unknown",
     "확인안됨": "unknown",
     "확인불가": "unknown",
@@ -629,7 +668,7 @@
         session = parseSession(m[2]);
         itemText = (m[3] || "").trim();
       }
-      var itemId = itemText ? resolveItem(itemText) : "unknown";
+      var itemId = itemText ? resolveItem(itemText) : "";
       if (!date) {
         errors.push((idx + 1) + "행: 날짜 오류");
         return;
@@ -639,16 +678,16 @@
         return;
       }
       if (!itemId) {
-        itemId = "unknown";
+        itemId = blankItemForDate(date);
         if (itemText && !note) note = itemText;
       }
-      ok.push({
+      ok.push(normalizeRecord({
         id: uid(),
         date: date,
         session: session,
         itemId: itemId,
         note: note
-      });
+      }));
     });
     return { records: ok, errors: errors, site: site };
   }
@@ -658,13 +697,13 @@
       "# 시험장: " + state.site,
       "# 형식: 날짜  회차  품목",
       "# 같은 회차에 시험일이 여러 날 있습니다.",
-      "# 품목을 모르면 공란이나 미확인, 시험 없으면 미실시"
+      "# 이후 일정은 진행 전, 지난 공란은 미확인, 시험 없으면 미실시"
     ];
     state.records.slice().sort(function (a, b) {
       if (a.session !== b.session) return a.session - b.session;
       return a.date < b.date ? -1 : 1;
     }).forEach(function (row) {
-      var name = row.itemId === "unknown" ? "" : itemName(row.itemId);
+      var name = row.itemId === "pending" ? "진행 전" : (isBlankItemId(row.itemId) ? "" : itemName(row.itemId));
       var line = row.date + "\t" + row.session + "회\t" + name;
       if (row.note) line += "\t" + row.note;
       lines.push(line);
@@ -823,7 +862,7 @@
   }
 
   function scheduleEmptyHtml() {
-    return '<div class="empty card">회차 시험일을 먼저 넣으면 그 날짜만 예상합니다. 품목을 모르면 공란이나 미확인으로 넣으면 됩니다.</div>';
+    return '<div class="empty card">회차 시험일을 먼저 넣으면 그 날짜만 예상합니다. 이후 일정은 진행 전으로 두면 됩니다.</div>';
   }
 
   function notExamHtml() {
@@ -1368,10 +1407,11 @@
     var isToday = date === todayStr();
     var rankHtml = !allExamDates().length
       ? scheduleEmptyHtml()
-      : (scheduled ? actualBannerHtml(actualId, ranked) + renderRankList(top, actualId) : notExamHtml());
+      : (scheduled ? statusBannerHtml(date, ranked) + renderRankList(top, actualId) : notExamHtml());
     var dateLede = formatKor(date);
-    if (actualId) dateLede += " · " + escapeHtml(itemName(actualId));
-    else if (scheduled) dateLede += " · 시험일";
+    if (actualId) dateLede += " · 시험일";
+    else if (scheduled && isFutureDate(date)) dateLede += " · 진행 전";
+    else if (scheduled) dateLede += " · 미확인";
     else dateLede += " · 시험일 아님";
     root.innerHTML =
       '<div class="topbar"><button class="ghost" type="button" data-reload>새로고침</button><h1>일자별 예상</h1><button class="ghost" data-go="/settings">시험장</button></div>' +
@@ -1442,9 +1482,11 @@
     var roundExamDays = roundRows.filter(isScheduledExamRow);
     var used = {};
     var unknownCount = 0;
+    var pendingCount = 0;
     var skipCount = 0;
     roundRows.forEach(function (row) {
-      if (row.itemId === "unknown") unknownCount += 1;
+      if (row.itemId === "pending") pendingCount += 1;
+      else if (row.itemId === "unknown") unknownCount += 1;
       else if (row.itemId === "none") skipCount += 1;
       else used[row.itemId] = true;
     });
@@ -1455,10 +1497,10 @@
             (row.note ? '<div class="muted">' + escapeHtml(row.note) + "</div>" : "") +
             '</div><button class="ghost" data-go="/edit/' + row.id + '">수정</button></div>';
         }).join("") + "</div>"
-      : '<p class="muted">이 날짜는 아직 일정에 없습니다. 품목을 모르면 공란이나 미확인으로 넣으면 됩니다.</p>';
+      : '<p class="muted">이 날짜는 아직 일정에 없습니다. 이후 시험이면 진행 전으로 넣으면 됩니다.</p>';
     var rankHtml = !allExamDates().length
       ? scheduleEmptyHtml()
-      : (scheduled ? actualBannerHtml(actualId, ranked) + renderRankList(top, actualId) : notExamHtml());
+      : (scheduled ? statusBannerHtml(date, ranked) + renderRankList(top, actualId) : notExamHtml());
 
     root.innerHTML =
       '<div class="topbar"><button class="ghost" data-go="' + lastPredictPath + '">닫기</button><h2>일자 예상</h2><button class="ghost" data-go="/new?date=' + date + '">입력</button></div>' +
@@ -1466,13 +1508,13 @@
       '<div class="field"><span>날짜</span></div>' +
       dateFieldHtml("day-date", date) +
       '<label class="field" style="margin-top:12px"><span>회차</span><input id="day-round" type="number" min="1" max="366" value="' + session + '"></label>' +
-      '<p class="lede" style="margin-top:12px">' + formatKor(date) + " · " + sessionLabel(session) + (actualId ? " · " + escapeHtml(itemName(actualId)) : "") + " · 시험일 " + roundExamDays.length + "날" + (scheduled ? "" : " · 이날은 제외") + "</p>" +
+      '<p class="lede" style="margin-top:12px">' + formatKor(date) + " · " + sessionLabel(session) + (scheduled && isFutureDate(date) && !actualId ? " · 진행 전" : "") + " · 시험일 " + roundExamDays.length + "날" + (scheduled ? "" : " · 이날은 제외") + "</p>" +
       '<p class="section-title">이 날짜</p>' + actualHtml +
       '<p class="section-title">이번 회차 나온 품목</p>' +
       (Object.keys(used).length
         ? '<div class="pills">' + Object.keys(used).map(function (id) { return '<span class="pill">' + escapeHtml(itemName(id)) + "</span>"; }).join("") + "</div>"
         : '<p class="muted">아직 확인된 품목이 없습니다.</p>') +
-      '<p class="muted">미확인 ' + unknownCount + "날 · 미실시 " + skipCount + "날</p>" +
+      '<p class="muted">진행 전 ' + pendingCount + "날 · 미확인 " + unknownCount + "날 · 미실시 " + skipCount + "날</p>" +
       '<p class="section-title">이번 회차 아직 안 나온 품목</p>' +
       (missing.length
         ? '<div class="pills">' + missing.map(function (item) { return '<span class="pill">' + escapeHtml(item.name) + "</span>"; }).join("") + "</div>"
@@ -1596,7 +1638,7 @@
     ranked.forEach(function (row, i) { byId[row.item.id] = { rank: i + 1, row: row }; });
     root.innerHTML =
       '<div class="topbar"><span class="ghost"></span><h1>제빵 품목</h1><span class="ghost"></span></div>' +
-      '<p class="lede">' + (isExamDate(date) ? formatKor(date) + " 시험일 기준 순위입니다." : "입력된 시험일이 없어 순위를 만들지 않았습니다.") + "</p>" +
+      '<p class="lede">' + (isExamDate(date) ? formatKor(date) + (isFutureDate(date) ? " 진행 전 예상 순위입니다." : " 시험일 기준 순위입니다.") : "입력된 시험일이 없어 순위를 만들지 않았습니다.") + "</p>" +
       '<div class="card">' + examItems().map(function (item) {
           var info = byId[item.id];
           var s = info ? info.row.stats : statsFor(item.id, date, session);
@@ -1615,7 +1657,7 @@
         id: existing.id,
         date: existing.date,
         session: existing.session,
-        itemId: existing.itemId,
+        itemId: isBlankItemId(existing.itemId) ? blankItemForDate(existing.date) : existing.itemId,
         note: existing.note || ""
       };
     }
@@ -1625,7 +1667,7 @@
       id: uid(),
       date: date,
       session: sessionForDate(date),
-      itemId: "unknown",
+      itemId: blankItemForDate(date),
       note: ""
     };
   }
@@ -1640,6 +1682,7 @@
     if (!draft || draft._mode !== (isNew ? "new" : existing.id)) {
       draft = Object.assign(editorState(existing), { _mode: isNew ? "new" : existing.id });
     }
+    if (isBlankItemId(draft.itemId)) draft.itemId = blankItemForDate(draft.date);
     var dup = state.records.find(function (row) {
       return row.date === draft.date && row.id !== draft.id;
     });
@@ -1649,9 +1692,13 @@
       '<div class="stack">' +
         '<label class="field"><span>시험일</span><input id="f-date" type="date" value="' + draft.date + '"></label>' +
         '<label class="field"><span>회차</span><input id="f-session" type="number" min="1" max="366" step="1" value="' + Number(draft.session) + '"></label>' +
-        '<p class="muted">1회에 1/12, 1/13처럼 시험일이 여러 날 있습니다. 품목을 모르면 공란·미확인, 시험이 없으면 미실시.</p>' +
+        '<p class="muted">이후 시험일은 진행 전, 지난 날 품목을 모르면 미확인, 시험이 없으면 미실시.</p>' +
         '<div class="field"><span>출제 품목</span><div class="stack" id="f-items">' +
-          ITEMS.map(function (item) {
+          ITEMS.filter(function (item) {
+            if (item.id === "pending") return isFutureDate(draft.date);
+            if (item.id === "unknown") return !isFutureDate(draft.date);
+            return true;
+          }).map(function (item) {
             return '<button type="button" class="choice' + (draft.itemId === item.id ? " on" : "") + '" data-item="' + item.id + '">' +
               escapeHtml(item.name) + "</button>";
           }).join("") + "</div></div>" +
@@ -1665,6 +1712,7 @@
     document.getElementById("f-date").addEventListener("change", function () {
       draft.date = this.value;
       if (isNew) draft.session = inferSession(draft.date);
+      if (isBlankItemId(draft.itemId)) draft.itemId = blankItemForDate(draft.date);
       renderEditor(isNew);
     });
     document.getElementById("f-session").addEventListener("change", function () {
@@ -1681,6 +1729,7 @@
     document.getElementById("save").addEventListener("click", function () {
       if (!draft.date || !draft.itemId) return;
       draft.session = parseSession(document.getElementById("f-session").value) || inferSession(draft.date);
+      if (isBlankItemId(draft.itemId)) draft.itemId = blankItemForDate(draft.date);
       state.records = state.records.filter(function (row) {
         if (row.id === draft.id) return false;
         if (row.date === draft.date) return false;
@@ -1715,7 +1764,7 @@
       '<div class="topbar"><button class="ghost" data-go="/log">닫기</button><h2>TXT 일괄</h2><span class="ghost"></span></div>' +
       '<p class="lede">파일을 고르면 바로 반영됩니다. 붙여넣기만 한 경우에는 반영을 눌러 주세요.</p>' +
       '<p class="section-title">형식</p>' +
-      '<pre class="sample">시험장: 남부\n2026-01-12 1회 밤식빵\n2026-01-13 1회 소보로빵\n2026-01-14 1회\n2026-01-15 1회 미실시</pre>' +
+      '<pre class="sample">시험장: 남부\n2026-01-12 1회 밤식빵\n2026-01-13 1회\n2026-01-14 1회 진행 전\n2026-01-15 1회 미실시</pre>' +
       '<label class="field" style="margin-top:16px"><span>붙여넣기</span>' +
       '<textarea id="bulk" placeholder="여기에 붙여넣거나 아래에서 TXT를 고르세요"></textarea></label>' +
       '<label class="btn btn-secondary" for="txt-file">TXT 파일 선택</label>' +
@@ -1761,12 +1810,12 @@
     document.getElementById("sample").addEventListener("click", function () {
       downloadText("기출_양식.txt",
         "# 같은 회차에 시험일이 여러 날 있습니다. 1회 1/12, 1/13 ...\n" +
-        "# 품목 모르면 공란(빈칸)이나 미확인, 시험 없으면 미실시\n" +
+        "# 이후 일정은 진행 전, 지난 공란은 미확인, 시험 없으면 미실시\n" +
         "\n" +
         "시험장: " + state.site + "\n" +
         "2026-01-12 1회 밤식빵\n" +
-        "2026-01-13 1회 소보로빵\n" +
-        "2026-01-14 1회\n" +
+        "2026-01-13 1회\n" +
+        "2026-01-14 1회 진행 전\n" +
         "2026-01-15 1회 미실시\n");
     });
     document.getElementById("apply").addEventListener("click", function () {
@@ -1841,6 +1890,7 @@
   }
 
   function render() {
+    normalizeRecords();
     var parts = parseHash().parts;
     if (parts[0] === "month") return renderMonth();
     if (parts[0] === "day") return renderDay();
