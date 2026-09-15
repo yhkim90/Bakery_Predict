@@ -230,7 +230,7 @@
 (function () {
   var STORAGE_KEY = "bakery-predict-practical-v1";
   var SEED_HASH_KEY = STORAGE_KEY + "-seed-hash";
-  var APP_VERSION = "20260915g";
+  var APP_VERSION = "20260915h";
   var WEEK = ["일", "월", "화", "수", "목", "금", "토"];
 
   var ITEMS = [
@@ -1382,7 +1382,8 @@
     });
     root.innerHTML =
       '<div class="topbar"><span class="ghost"></span><h1>기출 기록</h1><button class="ghost" data-go="/new">추가</button></div>' +
-      '<p class="lede"><span class="lede-line">' + escapeHtml(state.site) + " · 같은 회차에 시험일이 여러 날 있습니다.</span><span class="lede-line">' + yearOf(todayStr()) + "년은 " + (lastSession(yearOf(todayStr())) || 0) + "회까지 있습니다.</span></p>" +
+      '<p class="lede"><span class="lede-line">' + escapeHtml(state.site) + " · 같은 회차에 시험일이 여러 날 있습니다.</span>" +
+      '<span class="lede-line">' + yearOf(todayStr()) + "년은 " + (lastSession(yearOf(todayStr())) || 0) + "회까지 있습니다.</span></p>" +
       (rows.length ? '<div class="card">' + rows.map(function (row) {
         return '<button class="item-link" data-go="/edit/' + row.id + '"><div><strong>' + sessionLabel(row.session) + " · " + formatKor(row.date) + "</strong><span>" +
           escapeHtml(itemName(row.itemId)) + '</span></div><span class="pill">수정</span></button>';
