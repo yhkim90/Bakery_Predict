@@ -6,6 +6,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="제빵 실기 예상">
   <meta name="theme-color" content="#5C4033">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
   <title>제빵 실기 예상</title>
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
@@ -209,6 +211,8 @@
   <script>
 (function () {
   var STORAGE_KEY = "bakery-predict-practical-v1";
+  var SEED_HASH_KEY = STORAGE_KEY + "-seed-hash";
+  var APP_VERSION = "20260915c";
   var WEEK = ["일", "월", "화", "수", "목", "금", "토"];
 
   var ITEMS = [
@@ -571,6 +575,13 @@
     return lines.join("\n") + "\n";
   }
 
+  function simpleHash(text) {
+    var h = 0;
+    var i;
+    for (i = 0; i < text.length; i++) h = ((h << 5) - h + text.charCodeAt(i)) | 0;
+    return String(h);
+  }
+
   function applyTxtImport(parsed, replaceAll) {
     if (parsed.site) state.site = parsed.site;
     if (replaceAll) state.records = [];
@@ -581,6 +592,22 @@
       state.records.push(row);
     });
     saveState();
+  }
+
+  function importTxtText(text, replaceAll) {
+    var parsed = parseTxtRecords(text);
+    if (parsed.records.length) applyTxtImport(parsed, replaceAll);
+    return parsed;
+  }
+
+  function importSeedFile(name, text) {
+    var parsed = parseTxtRecords(text);
+    if (!parsed.records.length) return false;
+    var stamp = name + ":" + simpleHash(text);
+    if (readStore(SEED_HASH_KEY) === stamp && state.records.length) return false;
+    applyTxtImport(parsed, false);
+    writeStore(SEED_HASH_KEY, stamp);
+    return true;
   }
 
   function downloadText(filename, text, type) {
@@ -1452,7 +1479,7 @@
   function renderUpload() {
     root.innerHTML =
       '<div class="topbar"><button class="ghost" data-go="/log">닫기</button><h2>TXT 일괄</h2><span class="ghost"></span></div>' +
-      '<p class="lede">같은 회차에 날짜를 여러 줄 적습니다. 품목을 모르면 비우거나 미확인, 시험이 없으면 미실시.</p>' +
+      '<p class="lede">파일을 고르면 바로 반영됩니다. 붙여넣기만 한 경우에는 반영을 눌러 주세요.</p>' +
       '<p class="section-title">형식</p>' +
       '<pre class="sample">시험장: 남부\n2026-01-12 1회 밤식빵\n2026-01-13 1회 소보로빵\n2026-01-14 1회 미확인\n2026-01-15 1회 미실시</pre>' +
       '<label class="field" style="margin-top:16px"><span>붙여넣기</span>' +
@@ -1467,10 +1494,31 @@
       '<div id="result" class="muted">아직 반영하지 않았습니다.</div>' +
       tabBar("log");
     bindNav();
+    function showImportResult(parsed) {
+      var box = document.getElementById("result");
+      if (!parsed.records.length && !parsed.errors.length) {
+        box.innerHTML = '<p class="warn">넣을 줄이 없습니다.</p>';
+        return;
+      }
+      box.innerHTML =
+        (parsed.records.length ? '<p class="ok">' + parsed.records.length + "건 반영 · 이 브라우저에 저장됨</p>" : "") +
+        (parsed.errors.length
+          ? '<p class="warn">건너뛴 줄</p><p class="muted">' + parsed.errors.map(escapeHtml).join("<br>") + "</p>"
+          : '<p class="muted">오류 없음</p>') +
+        (parsed.records.length ? '<button class="btn btn-secondary" data-go="/log">기록 보기</button>' : "");
+      bindNav();
+    }
+    function applyFromText(text) {
+      var parsed = importTxtText(text, document.getElementById("replace").checked);
+      showImportResult(parsed);
+    }
     function fillFromFile(file) {
       if (!file) return;
       var reader = new FileReader();
-      reader.onload = function () { document.getElementById("bulk").value = reader.result; };
+      reader.onload = function () {
+        document.getElementById("bulk").value = reader.result;
+        applyFromText(reader.result);
+      };
       reader.readAsText(file, "utf-8");
     }
     document.getElementById("txt-file").addEventListener("change", function () {
@@ -1488,20 +1536,7 @@
         "2026-01-15 1회 미실시\n");
     });
     document.getElementById("apply").addEventListener("click", function () {
-      var parsed = parseTxtRecords(document.getElementById("bulk").value);
-      var box = document.getElementById("result");
-      if (!parsed.records.length && !parsed.errors.length) {
-        box.innerHTML = '<p class="warn">넣을 줄이 없습니다.</p>';
-        return;
-      }
-      if (parsed.records.length) applyTxtImport(parsed, document.getElementById("replace").checked);
-      box.innerHTML =
-        (parsed.records.length ? '<p class="ok">' + parsed.records.length + "건 반영</p>" : "") +
-        (parsed.errors.length
-          ? '<p class="warn">건너뛴 줄</p><p class="muted">' + parsed.errors.map(escapeHtml).join("<br>") + "</p>"
-          : '<p class="muted">오류 없음</p>') +
-        (parsed.records.length ? '<button class="btn btn-secondary" data-go="/log">기록 보기</button>' : "");
-      bindNav();
+      applyFromText(document.getElementById("bulk").value);
     });
   }
 
@@ -1521,6 +1556,7 @@
       '<label class="btn btn-secondary" for="import">JSON 가져오기</label>' +
       '<input id="import" class="hidden" type="file" accept="application/json">' +
       '<div class="footer-actions"><button type="button" id="reset">모든 기록 지우기</button></div>' +
+      '<p class="muted" style="text-align:center;margin-top:16px">화면 버전 ' + APP_VERSION + "</p>" +
       tabBar("predict");
     bindNav();
     document.getElementById("save-site").addEventListener("click", function () {
@@ -1562,6 +1598,7 @@
       if (!confirm("시험장 기록과 예상이 모두 지워집니다.")) return;
       state = defaultState();
       saveState();
+      writeStore(SEED_HASH_KEY, "");
       go("/");
     });
   }
@@ -1586,13 +1623,10 @@
   if (/^https?:$/.test(location.protocol)) {
     ["기출_양식.txt", "기출.txt"].reduce(function (wait, name) {
       return wait.then(function () {
-        return fetch(encodeURI(name)).then(function (res) {
+        return fetch(encodeURI(name) + "?v=" + APP_VERSION + "&t=" + Date.now(), { cache: "no-store" }).then(function (res) {
           if (!res.ok) return;
           return res.text().then(function (text) {
-            var parsed = parseTxtRecords(text);
-            if (!parsed.records.length) return;
-            applyTxtImport(parsed, false);
-            render();
+            if (importSeedFile(name, text)) render();
           });
         }).catch(function () {});
       });
