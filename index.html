@@ -268,7 +268,7 @@
 (function () {
   var STORAGE_KEY = "bakery-predict-practical-v1";
   var SEED_HASH_KEY = STORAGE_KEY + "-seed-hash";
-  var APP_VERSION = "20260916e";
+  var APP_VERSION = "20260916f";
   var WEEK = ["일", "월", "화", "수", "목", "금", "토"];
 
   var ITEMS = [
@@ -442,7 +442,11 @@
   }
 
   function defaultState() {
-    return { site: "시험장 1곳", records: [] };
+    return { site: "시험장 1곳", records: [], calib: emptyCalib("") };
+  }
+
+  function emptyCalib(stamp) {
+    return { stamp: stamp || "", boost: {}, factorMul: {}, n: 0, top1: 0, top3: 0, top5: 0 };
   }
 
   function loadState() {
@@ -453,6 +457,7 @@
       if (!parsed.records) parsed.records = [];
       if (!parsed.site) parsed.site = "시험장 1곳";
       parsed.records.forEach(normalizeRecord);
+      if (!parsed.calib) parsed.calib = emptyCalib("");
       return parsed;
     } catch (e) {
       return defaultState();
@@ -936,7 +941,8 @@
   };
 
   function makeFactor(key, label, raw) {
-    var w = FACTOR_WEIGHTS[key] || 0.3;
+    var mul = (state.calib && state.calib.factorMul && state.calib.factorMul[key]) || 1;
+    var w = (FACTOR_WEIGHTS[key] || 0.3) * mul;
     var rawClamped = clamp(raw, 0, 100);
     return {
       key: key,
@@ -1272,20 +1278,22 @@
       }
       reason = labels.join(" · ");
     }
-    return { score: score, reason: reason, stats: s };
+    return { score: score, reason: reason, stats: s, factors: factors };
   }
 
   function predict(date, session) {
     if (!isExamDate(date)) return [];
     session = session || sessionForDate(date);
     var ctx = buildPredictContext(date, session);
+    var boost = (state.calib && state.calib.boost) || {};
     var ranked = examItems().map(function (item) {
       var result = scoreItem(item, date, session, ctx);
       return {
         item: item,
-        score: result.score,
+        score: result.score + (boost[item.id] || 0),
         reason: result.reason,
-        stats: result.stats
+        stats: result.stats,
+        factors: result.factors
       };
     }).filter(function (row) { return row.score > -9000; })
       .sort(function (a, b) { return b.score - a.score; });
@@ -1301,6 +1309,92 @@
       row.pct = Math.max(8, Math.round(100 * (exps[idx] / sum) / maxP));
     });
     return ranked;
+  }
+
+  var calibBusy = false;
+
+  function calibStamp() {
+    return simpleHash(state.records.map(function (row) {
+      return row.date + "\t" + row.session + "\t" + row.itemId;
+    }).sort().join("|"));
+  }
+
+  function nudgeBoost(map, id, delta) {
+    map[id] = clamp((map[id] || 0) + delta, -18, 18);
+  }
+
+  function applyCalibStep(ranked, actualId) {
+    var rank = 0;
+    var actualRow = null;
+    var i;
+    for (i = 0; i < ranked.length; i++) {
+      if (ranked[i].item.id === actualId) {
+        rank = i + 1;
+        actualRow = ranked[i];
+        break;
+      }
+    }
+    if (!rank || !actualRow) return { rank: 0 };
+    var lr = rank === 1 ? 0.04 : 0.12;
+    var boost = state.calib.boost;
+    nudgeBoost(boost, actualId, lr * (rank === 1 ? 1.2 : Math.min(rank, 8)));
+    if (rank > 1) {
+      for (i = 0; i < Math.min(3, ranked.length); i++) {
+        if (ranked[i].item.id !== actualId) nudgeBoost(boost, ranked[i].item.id, -lr * (i === 0 ? 2.4 : 0.7));
+      }
+      var winner = ranked[0];
+      var skip = { RoundDup: 1, StickyTrap: 1 };
+      if (actualRow.factors && winner.factors) {
+        var actualRaw = {};
+        var winRaw = {};
+        actualRow.factors.forEach(function (f) { actualRaw[f.key] = f.raw; });
+        winner.factors.forEach(function (f) { winRaw[f.key] = f.raw; });
+        Object.keys(FACTOR_WEIGHTS).forEach(function (key) {
+          if (skip[key]) return;
+          var d = (actualRaw[key] || 0) - (winRaw[key] || 0);
+          var mul = state.calib.factorMul[key] || 1;
+          state.calib.factorMul[key] = clamp(mul * (1 + lr * 0.0035 * d), 0.55, 1.65);
+        });
+      }
+    }
+    Object.keys(boost).forEach(function (id) { boost[id] *= 0.997; });
+    return { rank: rank };
+  }
+
+  function runCalibration() {
+    state.calib = emptyCalib(calibStamp());
+    var rows = state.records.filter(function (row) { return isExamItemId(row.itemId); })
+      .sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+    var i;
+    for (i = 0; i < rows.length; i++) {
+      var date = rows[i].date;
+      if (uniqueSortedDates(priorRecords(date).filter(isScheduledExamRow)).length < 6) continue;
+      var ranked = predict(date, rows[i].session);
+      if (!ranked.length) continue;
+      var step = applyCalibStep(ranked, rows[i].itemId);
+      if (!step.rank) continue;
+      state.calib.n += 1;
+      if (step.rank === 1) state.calib.top1 += 1;
+      if (step.rank <= 3) state.calib.top3 += 1;
+      if (step.rank <= 5) state.calib.top5 += 1;
+    }
+    saveState();
+  }
+
+  function ensureCalibrated() {
+    if (calibBusy) return;
+    var stamp = calibStamp();
+    if (state.calib && state.calib.stamp === stamp && state.calib.n >= 0) return;
+    calibBusy = true;
+    try { runCalibration(); }
+    finally { calibBusy = false; }
+  }
+
+  function calibLine() {
+    var c = state.calib;
+    if (!c || c.n < 8) return "";
+    var pct = function (n) { return Math.round(100 * n / c.n); };
+    return "보정 " + pct(c.top1) + "% / 3위 안 " + pct(c.top3) + "% (" + c.n + "날)";
   }
 
   function predictPath(date, session) {
@@ -1431,11 +1525,13 @@
       : (scheduled ? statusBannerHtml(date, ranked) + renderRankList(top, actualId) : notExamHtml());
     var status = actualId ? "확인" : (scheduled && isFutureDate(date) ? "진행 전" : (scheduled ? "미확인" : "시험일 아님"));
     var dateLede = WEEK[weekdayOf(date)] + " · " + status + " · " + roundExamDays.length + "일 · 이달 " + Object.keys(unique).length + "품목";
+    var learn = calibLine();
     root.innerHTML =
       '<div class="topbar"><button class="ghost" type="button" data-reload>새로고침</button><h1>일자별 예상</h1><button class="ghost" data-go="/settings">시험장</button></div>' +
       '<p class="site">' + escapeHtml(state.site) + " · " + year + "년 " + (latest ? sessionLabel(latest) : "") + "</p>" +
       dateFieldHtml("home-date", date, "home-round", roundNo) +
       '<p class="lede tight">' + dateLede + (isToday ? "" : ' <button type="button" class="inline" id="go-today">오늘</button>') + "</p>" +
+      (learn ? '<p class="lede tight">' + learn + "</p>" : "") +
       rankHtml +
       '<div class="btn-row">' +
         '<button class="btn btn-primary" data-go="/day/' + date + (pinnedRound ? "?r=" + roundNo : "") + '">자세히</button>' +
@@ -1842,6 +1938,11 @@
       '<p class="section-title">화면 업데이트</p>' +
       '<p class="muted">홈 화면 아이콘은 예전 화면을 붙잡는 경우가 있습니다. 버튼을 누르면 새 파일을 다시 받습니다.</p>' +
       '<button class="btn btn-secondary" type="button" data-reload>화면 새로 받기</button>' +
+      '<p class="section-title">예측 보정</p>' +
+      '<p class="muted">확인된 기출마다 그날 이전 기록만으로 예상을 다시 매겨, 실제 출제와 비교해 가중치를 조금씩 고칩니다.</p>' +
+      (state.calib && state.calib.n
+        ? '<p class="lede tight">1위 ' + Math.round(100 * state.calib.top1 / state.calib.n) + "% · 3위 안 " + Math.round(100 * state.calib.top3 / state.calib.n) + "% · 5위 안 " + Math.round(100 * state.calib.top5 / state.calib.n) + "% (" + state.calib.n + "날)</p>"
+        : '<p class="muted">기출이 더 쌓이면 적중률이 표시됩니다.</p>') +
       '<p class="section-title">기출 TXT</p>' +
       '<p class="muted">메모장에서 모아 둔 기출을 올리거나, 지금 기록을 TXT로 받습니다.</p>' +
       '<button class="btn btn-secondary" data-go="/upload">TXT 일괄 넣기</button>' +
@@ -1901,6 +2002,7 @@
 
   function render() {
     normalizeRecords();
+    ensureCalibrated();
     var parts = parseHash().parts;
     if (parts[0] === "month") return renderMonth();
     if (parts[0] === "day") return renderDay();
