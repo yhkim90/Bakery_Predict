@@ -181,6 +181,22 @@
     }
     .num.dim { background: #efe4d8; color: var(--muted); }
     .rank small { display: block; margin-top: 2px; color: var(--muted); font-size: 13px; }
+    .rank.hit {
+      margin: 0 -8px; padding-left: 8px; padding-right: 8px;
+      background: #efe4d8; border-radius: 12px;
+    }
+    .mark {
+      display: inline-block; margin-left: 6px; padding: 2px 8px; border-radius: 999px;
+      background: var(--accent); color: #fff; font-size: 11px; font-weight: 700;
+      vertical-align: middle;
+    }
+    .actual {
+      margin: 0 0 12px; padding: 14px 16px; border-radius: var(--radius);
+      background: #efe4d8; border: 1px solid var(--accent);
+    }
+    .actual small { display: block; color: var(--muted); font-size: 12px; font-weight: 700; }
+    .actual strong { display: block; margin-top: 4px; font-size: 22px; }
+    .actual span { display: block; margin-top: 4px; color: var(--accent); font-size: 14px; font-weight: 700; }
     .bar { height: 6px; border-radius: 99px; background: #efe4d8; margin-top: 8px; overflow: hidden; }
     .bar i { display: block; height: 100%; background: var(--accent); }
     .cal-head {
@@ -191,7 +207,7 @@
     .week span { text-align: center; color: var(--muted); font-size: 12px; font-weight: 700; padding: 6px 0; }
     .days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
     .day {
-      min-height: 54px; border-radius: 12px; padding: 4px 2px 6px;
+      min-height: 64px; border-radius: 12px; padding: 4px 2px 6px;
       background: transparent; display: flex; flex-direction: column; align-items: center; gap: 2px;
     }
     .day.on { background: var(--surface); border: 1px solid var(--line); }
@@ -199,6 +215,11 @@
     .day.pick { background: #efe4d8; }
     .day.empty { visibility: hidden; }
     .day b { font-size: 13px; }
+    .day .tag {
+      font-size: 10px; font-weight: 700; line-height: 1.2; color: var(--accent);
+      text-align: center; word-break: keep-all; max-width: 100%;
+    }
+    .day .tag.dim { color: var(--muted); font-weight: 600; }
     .dot { width: 6px; height: 6px; border-radius: 99px; background: var(--accent); }
     .muted { color: var(--muted); font-size: 14px; }
     .warn { color: var(--warn); font-size: 13px; }
@@ -231,7 +252,7 @@
 (function () {
   var STORAGE_KEY = "bakery-predict-practical-v1";
   var SEED_HASH_KEY = STORAGE_KEY + "-seed-hash";
-  var APP_VERSION = "20260916a";
+  var APP_VERSION = "20260916b";
   var WEEK = ["일", "월", "화", "수", "목", "금", "토"];
 
   var ITEMS = [
@@ -401,6 +422,54 @@
   function itemName(id) {
     var item = findItem(id);
     return item ? item.name : id;
+  }
+
+  function confirmedItemId(date) {
+    var hit = recordsOn(date).find(function (row) { return isExamItemId(row.itemId); });
+    return hit ? hit.itemId : "";
+  }
+
+  function shortItemName(id) {
+    if (!id || id === "unknown") return "공란";
+    if (id === "none") return "미실시";
+    var name = itemName(id);
+    if (name.length <= 4) return name;
+    return name.replace(/식빵$/, "").replace(/형$/, "").replace(/빵$/, "") || name;
+  }
+
+  function rankOfItem(ranked, itemId) {
+    var i;
+    for (i = 0; i < ranked.length; i++) {
+      if (ranked[i].item.id === itemId) return i + 1;
+    }
+    return 0;
+  }
+
+  function rankViewRows(ranked, actualId, limit) {
+    var rows = ranked.slice(0, limit).map(function (row, i) {
+      return Object.assign({}, row, { rank: i + 1 });
+    });
+    if (!actualId) return rows;
+    var i;
+    for (i = 0; i < rows.length; i++) {
+      if (rows[i].item.id === actualId) return rows;
+    }
+    for (i = 0; i < ranked.length; i++) {
+      if (ranked[i].item.id === actualId) {
+        rows.push(Object.assign({}, ranked[i], { rank: i + 1 }));
+        break;
+      }
+    }
+    return rows;
+  }
+
+  function actualBannerHtml(itemId, ranked) {
+    if (!itemId) return "";
+    var rank = rankOfItem(ranked, itemId);
+    return '<div class="actual"><small>이날 실제 출제</small><strong>' +
+      escapeHtml(itemName(itemId)) + "</strong>" +
+      (rank ? "<span>예상 " + rank + "위</span>" : "") +
+      "</div>";
   }
 
   var ITEM_ALIASES = {
@@ -1285,27 +1354,32 @@
     var year = yearOf(date);
     var scheduled = isExamDate(date);
     var ranked = scheduled ? predict(date, roundNo) : [];
+    var actualId = confirmedItemId(date);
     var monthRows = recordsInMonth(monthStr(date));
     var unique = {};
     monthRows.forEach(function (row) {
       var item = findItem(row.itemId);
       if (item && !item.skip) unique[row.itemId] = true;
     });
-    var top = ranked.slice(0, 5);
+    var top = rankViewRows(ranked, actualId, 5);
     var latest = lastSession(year);
     var roundRows = recordsInRound(year, roundNo);
     var roundExamDays = roundRows.filter(isScheduledExamRow);
     var isToday = date === todayStr();
     var rankHtml = !allExamDates().length
       ? scheduleEmptyHtml()
-      : (scheduled ? renderRankList(top) : notExamHtml());
+      : (scheduled ? actualBannerHtml(actualId, ranked) + renderRankList(top, actualId) : notExamHtml());
+    var dateLede = formatKor(date);
+    if (actualId) dateLede += " · " + escapeHtml(itemName(actualId));
+    else if (scheduled) dateLede += " · 시험일";
+    else dateLede += " · 시험일 아님";
     root.innerHTML =
       '<div class="topbar"><button class="ghost" type="button" data-reload>새로고침</button><h1>일자별 예상</h1><button class="ghost" data-go="/settings">시험장</button></div>' +
       '<p class="site">' + escapeHtml(state.site) + " · 제빵 실기 · " + year + "년 " + (latest ? sessionLabel(latest) : "") + "</p>" +
       '<div class="field"><span>조회 날짜</span></div>' +
       dateFieldHtml("home-date", date) +
       '<label class="field"><span>회차</span><input id="home-round" type="number" min="1" max="366" value="' + roundNo + '"></label>' +
-      '<p class="lede" style="margin-top:12px">' + formatKor(date) + (scheduled ? " · 시험일" : " · 시험일 아님") + "</p>" +
+      '<p class="lede" style="margin-top:12px">' + dateLede + "</p>" +
       '<div class="stats">' +
         '<div class="card"><small>조회 회차</small><strong>' + sessionLabel(roundNo) + "</strong></div>" +
         '<div class="card"><small>이번 회차 일수</small><strong>' + roundExamDays.length + "</strong></div>" +
@@ -1339,12 +1413,13 @@
     });
   }
 
-  function renderRankList(rows) {
+  function renderRankList(rows, actualId) {
     if (!rows.length) return '<div class="empty card">같은 날 이미 나온 품목을 제외하면 남은 후보가 없습니다.</div>';
     return '<div class="card">' + rows.map(function (row, i) {
-      return '<div class="rank">' +
-        '<div class="num' + (i > 2 ? " dim" : "") + '">' + (i + 1) + "</div>" +
-        "<div><strong>" + escapeHtml(row.item.name) + "</strong><small>" + escapeHtml(row.reason) + '</small>' +
+      var hit = actualId && row.item.id === actualId;
+      return '<div class="rank' + (hit ? " hit" : "") + '">' +
+        '<div class="num' + (i > 2 && !hit ? " dim" : "") + '">' + (row.rank || (i + 1)) + "</div>" +
+        "<div><strong>" + escapeHtml(row.item.name) + (hit ? '<span class="mark">실제</span>' : "") + "</strong><small>" + escapeHtml(row.reason) + '</small>' +
         '<div class="bar"><i style="width:' + row.pct + '%"></i></div></div>' +
         "</div>";
     }).join("") + "</div>";
@@ -1361,7 +1436,8 @@
     lastPredictSession = session;
     lastPredictPath = predictPath(date, pinnedRound ? session : sessionForDate(date));
     var ranked = scheduled ? predict(date, session) : [];
-    var top = ranked.slice(0, 8);
+    var actualId = confirmedItemId(date);
+    var top = rankViewRows(ranked, actualId, 8);
     var roundRows = recordsInRound(yearOf(date), session);
     var roundExamDays = roundRows.filter(isScheduledExamRow);
     var used = {};
@@ -1382,7 +1458,7 @@
       : '<p class="muted">이 날짜는 아직 일정에 없습니다. 품목을 모르면 공란이나 미확인으로 넣으면 됩니다.</p>';
     var rankHtml = !allExamDates().length
       ? scheduleEmptyHtml()
-      : (scheduled ? renderRankList(top) : notExamHtml());
+      : (scheduled ? actualBannerHtml(actualId, ranked) + renderRankList(top, actualId) : notExamHtml());
 
     root.innerHTML =
       '<div class="topbar"><button class="ghost" data-go="' + lastPredictPath + '">닫기</button><h2>일자 예상</h2><button class="ghost" data-go="/new?date=' + date + '">입력</button></div>' +
@@ -1390,7 +1466,7 @@
       '<div class="field"><span>날짜</span></div>' +
       dateFieldHtml("day-date", date) +
       '<label class="field" style="margin-top:12px"><span>회차</span><input id="day-round" type="number" min="1" max="366" value="' + session + '"></label>' +
-      '<p class="lede" style="margin-top:12px">' + formatKor(date) + " · " + sessionLabel(session) + " · 시험일 " + roundExamDays.length + "날" + (scheduled ? "" : " · 이날은 제외") + "</p>" +
+      '<p class="lede" style="margin-top:12px">' + formatKor(date) + " · " + sessionLabel(session) + (actualId ? " · " + escapeHtml(itemName(actualId)) : "") + " · 시험일 " + roundExamDays.length + "날" + (scheduled ? "" : " · 이날은 제외") + "</p>" +
       '<p class="section-title">이 날짜</p>' + actualHtml +
       '<p class="section-title">이번 회차 나온 품목</p>' +
       (Object.keys(used).length
@@ -1443,10 +1519,14 @@
     for (i = 1; i <= count; i++) {
       var date = ym + "-" + pad(i);
       var has = byDate[date];
+      var rec = has && has[0];
+      var confirmed = rec && isExamItemId(rec.itemId);
+      var tag = rec
+        ? '<span class="tag' + (confirmed ? "" : " dim") + '">' + escapeHtml(shortItemName(rec.itemId)) + "</span>"
+        : "";
       var cls = "day" + (has ? " on" : "") + (date === todayStr() ? " today" : "") + (date === lastPredictDate && date !== todayStr() ? " pick" : "");
       cells.push(
-        '<button class="' + cls + '" type="button" data-go="/day/' + date + '"><b>' + i + "</b>" +
-        (has ? '<span class="dot"></span>' : "") + "</button>"
+        '<button class="' + cls + '" type="button" data-go="/day/' + date + '"><b>' + i + "</b>" + tag + "</button>"
       );
     }
 
