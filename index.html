@@ -170,7 +170,9 @@
     { id: "donut", name: "빵도넛", note: "튀김 온도" },
     { id: "grissini", name: "그리시니", note: "가늘고 균일" },
     { id: "bagel", name: "베이글", note: "데치기" },
-    { id: "sausage", name: "소시지빵", note: "감기·밀봉" }
+    { id: "sausage", name: "소시지빵", note: "감기·밀봉" },
+    { id: "unknown", name: "미확인", skip: true },
+    { id: "none", name: "미실시", skip: true }
   ];
 
   function uid() {
@@ -269,6 +271,17 @@
     "화이트브레드": "white",
     "비상스트레이트식빵": "white",
     "식빵비상스트레이트법": "white",
+    "비상식빵": "white",
+    "미실시": "none",
+    "휴강": "none",
+    "없음": "none",
+    "미확인": "unknown",
+    "확인안됨": "unknown",
+    "확인불가": "unknown",
+    "불명": "unknown",
+    "모름": "unknown",
+    "?": "unknown",
+    "-": "unknown",
     "단과자빵소보로빵": "soboro",
     "단과자빵크림빵": "cream",
     "트위스트형단과자빵": "twist",
@@ -334,16 +347,39 @@
     return max;
   }
 
-  function nextSession(year) {
-    return lastSession(year) + 1;
+  function recordsInRound(year, session) {
+    return state.records
+      .filter(function (row) {
+        return yearOf(row.date) === String(year) && Number(row.session) === Number(session);
+      })
+      .sort(function (a, b) { return a.date < b.date ? -1 : 1; });
   }
 
-  function sameYearSession(a, b) {
-    return yearOf(a.date) === yearOf(b.date) && Number(a.session) === Number(b.session);
+  function inferSession(date) {
+    var year = yearOf(date);
+    var inYear = state.records.filter(function (row) { return yearOf(row.date) === year; });
+    var spans = {};
+    inYear.forEach(function (row) {
+      if (!spans[row.session]) spans[row.session] = { min: row.date, max: row.date };
+      if (row.date < spans[row.session].min) spans[row.session].min = row.date;
+      if (row.date > spans[row.session].max) spans[row.session].max = row.date;
+    });
+    var key;
+    for (key in spans) {
+      if (date >= spans[key].min && date <= spans[key].max) return Number(key);
+    }
+    var before = inYear.filter(function (row) { return row.date <= date; })
+      .sort(function (a, b) { return a.date < b.date ? 1 : -1; });
+    if (before[0]) return before[0].session;
+    return lastSession(year) || 1;
   }
 
   function sessionLabel(n) {
-    return Number(n) + "차";
+    return Number(n) + "회";
+  }
+
+  function examItems() {
+    return ITEMS.filter(function (item) { return !item.skip; });
   }
 
   function parseTxtRecords(text) {
@@ -359,36 +395,33 @@
         site = siteMatch[1].trim();
         return;
       }
-      var parts = raw.split(/[,\t|]/).map(function (part) { return part.trim(); }).filter(Boolean);
+      var parts = raw.split(/[,\t|]/).map(function (part) { return part.trim(); });
       var date = "";
       var session = 0;
       var itemText = "";
       var note = "";
-      if (parts.length >= 3 && parseLooseDate(parts[0]) && parseSession(parts[1])) {
+      if (parts.length >= 2 && parseLooseDate(parts[0]) && parseSession(parts[1])) {
         date = parseLooseDate(parts[0]);
         session = parseSession(parts[1]);
-        itemText = parts[2];
+        itemText = parts[2] || "";
         note = parts.slice(3).join(" ");
       } else {
-        var m = raw.match(/^(\d{4}[./-]\d{1,2}[./-]\d{1,2}|\d{8})\s+(\S+)\s+(.+)$/);
+        var m = raw.match(/^(\d{4}[./-]\d{1,2}[./-]\d{1,2}|\d{8})\s+(\S+)\s*(.*)$/);
         if (!m) {
           errors.push((idx + 1) + "행: 형식을 읽지 못함");
           return;
         }
         date = parseLooseDate(m[1]);
         session = parseSession(m[2]);
-        var rest = m[3].trim();
-        var splitNote = rest.split(/\s{2,}|\s+\/\s+/);
-        itemText = splitNote[0];
-        note = splitNote.slice(1).join(" ");
+        itemText = (m[3] || "").trim();
       }
-      var itemId = resolveItem(itemText);
+      var itemId = itemText ? resolveItem(itemText) : "unknown";
       if (!date) {
         errors.push((idx + 1) + "행: 날짜 오류");
         return;
       }
       if (!session) {
-        errors.push((idx + 1) + "행: 차수 오류");
+        errors.push((idx + 1) + "행: 회차 오류");
         return;
       }
       if (!itemId) {
@@ -409,15 +442,16 @@
   function recordsToTxt() {
     var lines = [
       "# 시험장: " + state.site,
-      "# 형식: 날짜  차수  품목",
-      "# 예) 2026-09-01  32차  밤식빵"
+      "# 형식: 날짜  회차  품목",
+      "# 같은 회차에 시험일이 여러 날 있습니다.",
+      "# 품목을 모르면 비우거나 미확인, 시험 없으면 미실시"
     ];
     state.records.slice().sort(function (a, b) {
-      if (a.date === b.date) return a.session - b.session;
+      if (a.session !== b.session) return a.session - b.session;
       return a.date < b.date ? -1 : 1;
     }).forEach(function (row) {
-      var line = row.date + "  " + row.session + "차  " + itemName(row.itemId);
-      if (row.note) line += "  " + row.note;
+      var line = row.date + "\t" + row.session + "회\t" + itemName(row.itemId);
+      if (row.note) line += "\t" + row.note;
       lines.push(line);
     });
     return lines.join("\n") + "\n";
@@ -428,7 +462,7 @@
     if (replaceAll) state.records = [];
     parsed.records.forEach(function (row) {
       state.records = state.records.filter(function (cur) {
-        return !sameYearSession(cur, row);
+        return cur.date !== row.date;
       });
       state.records.push(row);
     });
@@ -475,8 +509,18 @@
     var ym = monthStr(date);
     var monthHits = hits.filter(function (row) { return monthStr(row.date) === ym; }).length;
     var recent30 = hits.filter(function (row) { return daysBetween(row.date, date) <= 30; }).length;
+    var roundHits = session
+      ? hits.filter(function (row) {
+          return yearOf(row.date) === yearOf(date) && Number(row.session) === Number(session);
+        }).length
+      : 0;
+    var roundLast = session
+      ? hits.find(function (row) {
+          return yearOf(row.date) === yearOf(date) && Number(row.session) === Number(session);
+        })
+      : null;
     var sameDay = recordsOn(date).some(function (row) {
-      return row.itemId === itemId && (!session || row.session !== session);
+      return row.itemId === itemId;
     });
     var gap = last ? daysBetween(last.date, date) : null;
     return {
@@ -485,14 +529,19 @@
       total: hits.length,
       monthHits: monthHits,
       recent30: recent30,
+      roundHits: roundHits,
+      roundLast: roundLast,
       sameDay: sameDay
     };
   }
 
   function scoreItem(item, date, session) {
     var s = statsFor(item.id, date, session);
-    if (s.sameDay) return { score: -9999, reason: "같은 날 다른 차수 출제", stats: s };
+    if (item.skip) return { score: -9999, reason: "", stats: s };
+    if (s.sameDay) return { score: -9999, reason: "이 날짜 확정", stats: s };
     var score = 0;
+    if (s.roundHits === 0) score += 28;
+    else score -= s.roundHits * 12;
     if (s.gap == null) {
       score += 80;
     } else {
@@ -505,14 +554,15 @@
     score -= s.recent30 * 14;
     score += Math.max(0, 8 - s.total) * 3;
     var reason;
-    if (s.sameDay) reason = "같은 날 출제됨";
-    else if (s.gap == null) reason = "이 시험장 미출제";
-    else reason = s.gap + "일 공백 · 이번 달 " + s.monthHits + "회";
+    if (s.roundHits) reason = "이번 회차 " + s.roundHits + "번 나옴" + (s.roundLast ? " · " + s.roundLast.date.slice(5) : "");
+    else if (s.gap == null) reason = "이번 회차 미출제 · 기록 없음";
+    else reason = "이번 회차 미출제 · " + s.gap + "일 공백";
     return { score: score, reason: reason, stats: s };
   }
 
   function predict(date, session) {
-    var ranked = ITEMS.map(function (item) {
+    session = session || inferSession(date);
+    var ranked = examItems().map(function (item) {
       var result = scoreItem(item, date, session);
       return {
         item: item,
@@ -574,19 +624,24 @@
     var ranked = predict(date, null);
     var monthRows = recordsInMonth(monthStr(date));
     var unique = {};
-    monthRows.forEach(function (row) { unique[row.itemId] = true; });
+    monthRows.forEach(function (row) {
+      var item = findItem(row.itemId);
+      if (item && !item.skip) unique[row.itemId] = true;
+    });
     var top = ranked.slice(0, 5);
     var latest = lastSession(year);
+    var roundNo = inferSession(date);
+    var roundRows = recordsInRound(year, roundNo);
     root.innerHTML =
       '<div class="topbar"><span class="ghost"></span><h1>일자별 예상</h1><button class="ghost" data-go="/settings">시험장</button></div>' +
-      '<p class="site">' + escapeHtml(state.site) + " · 제빵 실기 · " + year + "년 연간 차수</p>" +
+      '<p class="site">' + escapeHtml(state.site) + " · 제빵 실기 · " + year + "년 " + (latest ? sessionLabel(latest) : "") + "</p>" +
       '<div class="stats">' +
-        '<div class="card"><small>올해 마지막</small><strong>' + (latest ? latest + "차" : "-") + "</strong></div>" +
-        '<div class="card"><small>이번 달 기록</small><strong>' + monthRows.length + "</strong></div>" +
+        '<div class="card"><small>이번 회차</small><strong>' + sessionLabel(roundNo) + "</strong></div>" +
+        '<div class="card"><small>이번 회차 일수</small><strong>' + roundRows.length + "</strong></div>" +
         '<div class="card"><small>이번 달 품목</small><strong>' + Object.keys(unique).length + "</strong></div>" +
       "</div>" +
-      '<p class="lede">이 시험장 기출 공백과 월별 빈도로 오늘 출제 가능성이 높은 제빵 품목입니다. 공식 발표가 아닙니다.</p>' +
-      (state.records.length ? renderRankList(top) : '<div class="empty card">아직 기출이 없습니다. 시험장 차수 기록을 넣으면 예상이 생깁니다.</div>') +
+      '<p class="lede">같은 회차에 시험일이 여러 날 있습니다. 이번 회차에서 아직 안 나온 품목을 위로 둡니다.</p>' +
+      (state.records.length ? renderRankList(top) : '<div class="empty card">아직 기출이 없습니다. 회차와 날짜를 넣으면 예상이 생깁니다.</div>') +
       '<button class="btn btn-primary" data-go="/day/' + date + '">오늘 자세히</button>' +
       '<button class="btn btn-secondary" data-go="/new">기출 입력</button>' +
       tabBar("predict");
@@ -608,28 +663,54 @@
     var parsed = parseHash();
     var date = parsed.parts[1] || todayStr();
     var actual = recordsOn(date);
-    var ranked = predict(date, actual.length ? actual[0].session : null);
+    var session = parsed.params.get("r") ? parseSession(parsed.params.get("r")) : (actual.length ? actual[0].session : inferSession(date));
+    var ranked = predict(date, session);
     var top = ranked.slice(0, 8);
+    var roundRows = recordsInRound(yearOf(date), session);
+    var used = {};
+    var unknownCount = 0;
+    var skipCount = 0;
+    roundRows.forEach(function (row) {
+      if (row.itemId === "unknown") unknownCount += 1;
+      else if (row.itemId === "none") skipCount += 1;
+      else used[row.itemId] = true;
+    });
+    var missing = examItems().filter(function (item) { return !used[item.id]; });
     var actualHtml = actual.length
       ? '<div class="card">' + actual.map(function (row) {
           return '<div class="record"><div><strong>' + yearOf(row.date) + "년 " + sessionLabel(row.session) + " · " + escapeHtml(itemName(row.itemId)) + "</strong>" +
             (row.note ? '<div class="muted">' + escapeHtml(row.note) + "</div>" : "") +
             '</div><button class="ghost" data-go="/edit/' + row.id + '">수정</button></div>';
         }).join("") + "</div>"
-      : '<p class="muted">이 날짜 확정 기출은 아직 없습니다. 올해는 ' + (lastSession(yearOf(date)) || 0) + "차까지 기록이 있습니다.</p>";
+      : '<p class="muted">이 날짜 확정 기출은 아직 없습니다.</p>';
 
     root.innerHTML =
       '<div class="topbar"><button class="ghost" data-go="/">닫기</button><h2>일자 예상</h2><button class="ghost" data-go="/new?date=' + date + '">입력</button></div>' +
-      '<p class="site">' + escapeHtml(state.site) + " · 차수는 연간 회차 (1차~366차)</p>" +
+      '<p class="site">' + escapeHtml(state.site) + " · 같은 회차에 시험일 여러 날</p>" +
       '<div class="field"><span>날짜</span><input id="day-date" type="date" value="' + date + '"></div>' +
-      '<p class="lede" style="margin-top:12px">' + formatKor(date) + " 기준 예상입니다.</p>" +
-      '<p class="section-title">확정 기출</p>' + actualHtml +
+      '<label class="field" style="margin-top:12px"><span>회차</span><input id="day-round" type="number" min="1" max="366" value="' + session + '"></label>' +
+      '<p class="lede" style="margin-top:12px">' + formatKor(date) + " · " + sessionLabel(session) + " · 시험일 " + roundRows.length + "날</p>" +
+      '<p class="section-title">이 날짜</p>' + actualHtml +
+      '<p class="section-title">이번 회차 나온 품목</p>' +
+      (Object.keys(used).length
+        ? '<div class="pills">' + Object.keys(used).map(function (id) { return '<span class="pill">' + escapeHtml(itemName(id)) + "</span>"; }).join("") + "</div>"
+        : '<p class="muted">아직 확인된 품목이 없습니다.</p>') +
+      '<p class="muted">미확인 ' + unknownCount + "날 · 미실시 " + skipCount + "날</p>" +
+      '<p class="section-title">이번 회차 아직 안 나온 품목</p>' +
+      (missing.length
+        ? '<div class="pills">' + missing.map(function (item) { return '<span class="pill">' + escapeHtml(item.name) + "</span>"; }).join("") + "</div>"
+        : '<p class="muted">확인된 품목 기준으로는 다 나왔습니다.</p>') +
       '<p class="section-title">출제 예상</p>' +
       renderRankList(top) +
       tabBar("predict");
     bindNav();
     document.getElementById("day-date").addEventListener("change", function () {
       go("/day/" + this.value);
+    });
+    document.getElementById("day-round").addEventListener("change", function () {
+      var n = parseSession(this.value);
+      if (!n) return;
+      go("/day/" + date + "?r=" + n);
     });
   }
 
@@ -643,8 +724,11 @@
       byDate[row.date].push(row);
     });
     var used = {};
-    rows.forEach(function (row) { used[row.itemId] = true; });
-    var missing = ITEMS.filter(function (item) { return !used[item.id]; });
+    rows.forEach(function (row) {
+      var item = findItem(row.itemId);
+      if (item && !item.skip) used[row.itemId] = true;
+    });
+    var missing = examItems().filter(function (item) { return !used[item.id]; });
     var start = firstWeekday(ym);
     var count = daysInMonth(ym);
     var cells = [];
@@ -669,12 +753,12 @@
         '<button class="ghost" data-go="/month/' + shiftMonth(ym, 1) + '">다음</button>' +
       "</div>" +
       '<div class="stats">' +
-        '<div class="card"><small>이달 차수</small><strong>' + (function () {
+        '<div class="card"><small>이달 회차</small><strong>' + (function () {
           if (!rows.length) return "-";
           var nums = rows.map(function (row) { return row.session; });
           var lo = Math.min.apply(null, nums);
           var hi = Math.max.apply(null, nums);
-          return lo === hi ? sessionLabel(lo) : lo + "–" + hi + "차";
+          return lo === hi ? sessionLabel(lo) : lo + "–" + hi + "회";
         }()) + "</strong></div>" +
         '<div class="card"><small>출제 품목</small><strong>' + Object.keys(used).length + "</strong></div>" +
         '<div class="card"><small>미출제</small><strong>' + missing.length + "</strong></div>" +
@@ -689,12 +773,12 @@
       (missing.length
         ? '<div class="pills">' + missing.map(function (item) { return '<span class="pill">' + escapeHtml(item.name) + "</span>"; }).join("") + "</div>"
         : '<p class="muted">이달 공개 20종이 모두 한 번 이상 나왔습니다.</p>') +
-      '<p class="section-title">차수 기록</p>' +
+      '<p class="section-title">회차별 기록</p>' +
       (rows.length ? '<div class="card">' + rows.map(function (row) {
-        return '<div class="record"><div><strong>' + yearOf(row.date) + "년 " + sessionLabel(row.session) + " · " + row.date.slice(8) + "일</strong>" +
+        return '<div class="record"><div><strong>' + sessionLabel(row.session) + " · " + row.date.slice(8) + "일</strong>" +
           '<div class="muted">' + escapeHtml(itemName(row.itemId)) + "</div></div>" +
           '<button class="ghost" data-go="/edit/' + row.id + '">수정</button></div>';
-      }).join("") + "</div>" : '<div class="empty card">이달 차수 기록이 없습니다.</div>') +
+      }).join("") + "</div>" : '<div class="empty card">이달 기록이 없습니다.</div>') +
       tabBar("month");
     bindNav();
   }
@@ -706,9 +790,9 @@
     });
     root.innerHTML =
       '<div class="topbar"><span class="ghost"></span><h1>기출 기록</h1><button class="ghost" data-go="/new">추가</button></div>' +
-      '<p class="lede">' + escapeHtml(state.site) + " · 차수는 연간 회차입니다. " + yearOf(todayStr()) + "년은 " + (lastSession(yearOf(todayStr())) || 0) + "차까지 있습니다.</p>" +
+      '<p class="lede">' + escapeHtml(state.site) + " · 같은 회차에 시험일이 여러 날 있습니다. " + yearOf(todayStr()) + "년은 " + (lastSession(yearOf(todayStr())) || 0) + "회까지 있습니다.</p>" +
       (rows.length ? '<div class="card">' + rows.map(function (row) {
-        return '<button class="item-link" data-go="/edit/' + row.id + '"><div><strong>' + yearOf(row.date) + "년 " + sessionLabel(row.session) + " · " + formatKor(row.date) + "</strong><span>" +
+        return '<button class="item-link" data-go="/edit/' + row.id + '"><div><strong>' + sessionLabel(row.session) + " · " + formatKor(row.date) + "</strong><span>" +
           escapeHtml(itemName(row.itemId)) + '</span></div><span class="pill">수정</span></button>';
       }).join("") + "</div>" : '<div class="empty card">메모장 TXT로 한 번에 넣거나, 시험 후 차수를 직접 입력하면 됩니다.</div>') +
       '<button class="btn btn-primary" data-go="/new">한 건 입력</button>' +
@@ -725,7 +809,7 @@
     root.innerHTML =
       '<div class="topbar"><span class="ghost"></span><h1>제빵 품목</h1><span class="ghost"></span></div>' +
       '<p class="lede">2026 실기 공개과제 20종입니다. 공백이 길수록 오늘 예상 순위가 올라갑니다.</p>' +
-      '<div class="card">' + ITEMS.map(function (item) {
+      '<div class="card">' + examItems().map(function (item) {
           var info = byId[item.id];
           var s = info ? info.row.stats : statsFor(item.id, date, null);
           var last = s.last ? s.last.date : "기록 없음";
@@ -752,8 +836,8 @@
     return {
       id: uid(),
       date: date,
-      session: nextSession(yearOf(date)),
-      itemId: ITEMS[0].id,
+      session: inferSession(date),
+      itemId: "unknown",
       note: ""
     };
   }
@@ -769,15 +853,15 @@
       draft = Object.assign(editorState(existing), { _mode: isNew ? "new" : existing.id });
     }
     var dup = state.records.find(function (row) {
-      return sameYearSession(row, draft) && row.id !== draft.id;
+      return row.date === draft.date && row.id !== draft.id;
     });
     root.innerHTML =
       '<div class="topbar"><button class="ghost" data-go="/log">닫기</button><h2>' + (isNew ? "기출 입력" : "기출 수정") + '</h2><span class="ghost"></span></div>' +
-      '<p class="lede">' + escapeHtml(state.site) + " · " + yearOf(draft.date) + "년 연간 차수 · 한 차수에 품목 하나</p>" +
+      '<p class="lede">' + escapeHtml(state.site) + " · " + yearOf(draft.date) + "년 " + sessionLabel(draft.session) + " · 같은 회차에 날짜를 여러 개 넣을 수 있습니다</p>" +
       '<div class="stack">' +
         '<label class="field"><span>시험일</span><input id="f-date" type="date" value="' + draft.date + '"></label>' +
-        '<label class="field"><span>연간 차수</span><input id="f-session" type="number" min="1" max="366" step="1" value="' + Number(draft.session) + '"></label>' +
-        '<p class="muted">올해는 보통 30차를 넘습니다. 비우면 다음 번호 ' + nextSession(yearOf(draft.date)) + "차가 기본입니다.</p>" +
+        '<label class="field"><span>회차</span><input id="f-session" type="number" min="1" max="366" step="1" value="' + Number(draft.session) + '"></label>' +
+        '<p class="muted">1회에 1/12, 1/13처럼 시험일이 여러 날 있습니다. 품목을 모르면 미확인, 시험이 없으면 미실시.</p>' +
         '<div class="field"><span>출제 품목</span><div class="stack" id="f-items">' +
           ITEMS.map(function (item) {
             return '<button type="button" class="choice' + (draft.itemId === item.id ? " on" : "") + '" data-item="' + item.id + '">' +
@@ -785,19 +869,18 @@
           }).join("") + "</div></div>" +
         '<label class="field"><span>메모</span><input id="f-note" type="text" maxlength="80" placeholder="감독 전달, 배합 특이사항" value="' + escapeHtml(draft.note) + '"></label>' +
       "</div>" +
-      (dup ? '<p class="warn">같은 해 ' + sessionLabel(draft.session) + " 기록이 이미 있습니다. 저장하면 그 기록을 덮습니다.</p>" : "") +
+      (dup ? '<p class="warn">같은 날짜 기록이 이미 있습니다. 저장하면 그 날을 덮습니다.</p>' : "") +
       '<button class="btn btn-primary" id="save">저장</button>' +
       (isNew ? "" : '<button class="btn btn-danger" id="del">삭제</button>') +
       tabBar("log");
     bindNav();
     document.getElementById("f-date").addEventListener("change", function () {
-      var prevYear = yearOf(draft.date);
       draft.date = this.value;
-      if (isNew && yearOf(draft.date) !== prevYear) draft.session = nextSession(yearOf(draft.date));
+      if (isNew) draft.session = inferSession(draft.date);
       renderEditor(isNew);
     });
     document.getElementById("f-session").addEventListener("change", function () {
-      draft.session = parseSession(this.value) || nextSession(yearOf(draft.date));
+      draft.session = parseSession(this.value) || inferSession(draft.date);
       renderEditor(isNew);
     });
     document.getElementById("f-note").addEventListener("input", function () { draft.note = this.value; });
@@ -809,10 +892,10 @@
     });
     document.getElementById("save").addEventListener("click", function () {
       if (!draft.date || !draft.itemId) return;
-      draft.session = parseSession(document.getElementById("f-session").value) || nextSession(yearOf(draft.date));
+      draft.session = parseSession(document.getElementById("f-session").value) || inferSession(draft.date);
       state.records = state.records.filter(function (row) {
         if (row.id === draft.id) return false;
-        if (sameYearSession(row, draft)) return false;
+        if (row.date === draft.date) return false;
         return true;
       });
       state.records.push({
@@ -830,7 +913,7 @@
     var del = document.getElementById("del");
     if (del) {
       del.addEventListener("click", function () {
-        if (!confirm("이 차수 기록을 지울까요?")) return;
+        if (!confirm("이 날짜 기록을 지울까요?")) return;
         state.records = state.records.filter(function (row) { return row.id !== draft.id; });
         saveState();
         draft = null;
@@ -842,9 +925,9 @@
   function renderUpload() {
     root.innerHTML =
       '<div class="topbar"><button class="ghost" data-go="/log">닫기</button><h2>TXT 일괄</h2><span class="ghost"></span></div>' +
-      '<p class="lede">날짜, 연간 차수, 품목을 한 줄에 하나씩 넣습니다. 같은 해 같은 차수는 덮어씁니다.</p>' +
+      '<p class="lede">같은 회차에 날짜를 여러 줄 적습니다. 품목을 모르면 비우거나 미확인, 시험이 없으면 미실시.</p>' +
       '<p class="section-title">형식</p>' +
-      '<pre class="sample">시험장: 서울북부\n2026-03-12  8차  밤식빵\n2026-09-01  32차  소보로빵\n2026.09.15,33,우유식빵</pre>' +
+      '<pre class="sample">시험장: 남부\n2026-01-12 1회 밤식빵\n2026-01-13 1회 소보로빵\n2026-01-14 1회 미확인\n2026-01-15 1회 미실시</pre>' +
       '<label class="field" style="margin-top:16px"><span>붙여넣기</span>' +
       '<textarea id="bulk" placeholder="여기에 붙여넣거나 아래에서 TXT를 고르세요"></textarea></label>' +
       '<label class="btn btn-secondary" for="txt-file">TXT 파일 선택</label>' +
@@ -868,10 +951,14 @@
     });
     document.getElementById("sample").addEventListener("click", function () {
       downloadText("기출_양식.txt",
-        "# 시험장: " + state.site + "\n" +
-        "# 한 줄에 날짜, 연간 차수, 품목. 차수는 그 해 1차부터 이어집니다.\n" +
-        "# 2026-03-12  8차  밤식빵\n" +
-        "# 2026-09-01  32차  소보로빵\n");
+        "# 같은 회차에 시험일이 여러 날 있습니다. 1회 1/12, 1/13 ...\n" +
+        "# 품목 모르면 미확인(또는 빈칸), 시험 없으면 미실시\n" +
+        "\n" +
+        "시험장: " + state.site + "\n" +
+        "2026-01-12 1회 밤식빵\n" +
+        "2026-01-13 1회 소보로빵\n" +
+        "2026-01-14 1회 미확인\n" +
+        "2026-01-15 1회 미실시\n");
     });
     document.getElementById("apply").addEventListener("click", function () {
       var parsed = parseTxtRecords(document.getElementById("bulk").value);
@@ -968,6 +1055,22 @@
 
   window.addEventListener("hashchange", render);
   render();
+
+  if (/^https?:$/.test(location.protocol)) {
+    ["기출_양식.txt", "기출.txt"].reduce(function (wait, name) {
+      return wait.then(function () {
+        return fetch(encodeURI(name)).then(function (res) {
+          if (!res.ok) return;
+          return res.text().then(function (text) {
+            var parsed = parseTxtRecords(text);
+            if (!parsed.records.length) return;
+            applyTxtImport(parsed, false);
+            render();
+          });
+        }).catch(function () {});
+      });
+    }, Promise.resolve());
+  }
 })();
   </script>
 </body>
