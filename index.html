@@ -273,7 +273,7 @@
 (function () {
   var STORAGE_KEY = "bakery-predict-practical-v1";
   var SEED_HASH_KEY = STORAGE_KEY + "-seed-hash";
-  var APP_VERSION = "20260917a";
+  var APP_VERSION = "20260917b";
   var WEEK = ["일", "월", "화", "수", "목", "금", "토"];
 
   var ITEMS = [
@@ -930,19 +930,19 @@
   }
 
   var FACTOR_WEIGHTS = {
-    DaysSinceLast: 0.3,
-    AvgInterval: 0.7,
-    MonthPattern: 0.55,
-    RecentCenterPattern: 0.6,
-    MarkovNext: 1.1,
-    RotationBalance: 0.85,
-    FamilyAffinity: 1.15,
+    DaysSinceLast: 1.35,
+    AvgInterval: 0.85,
+    MonthPattern: 0.2,
+    RecentCenterPattern: 0.85,
+    MarkovNext: 0.4,
+    RotationBalance: 0.55,
+    FamilyAffinity: 0.35,
     RoundDup: 1.4,
-    GroupAffinity: 0.25,
-    GlobalFrequency: 0.75,
-    MaxGapPressure: 0.2,
-    StickyTrap: 0.35,
-    DayOfWeek: 0.35
+    GroupAffinity: 0.2,
+    GlobalFrequency: 0.25,
+    MaxGapPressure: 1.05,
+    StickyTrap: 0.15,
+    DayOfWeek: 0.15
   };
 
   function makeFactor(key, label, raw) {
@@ -1076,6 +1076,16 @@
     var roundIds = prior.filter(function (row) {
       return yearOf(row.date) === yearOf(date) && Number(row.session) === Number(session) && isExamItemId(row.itemId);
     }).map(function (row) { return row.itemId; });
+    var firstByRound = {};
+    examPrior.forEach(function (row) {
+      var key = yearOf(row.date) + "-" + row.session;
+      if (!firstByRound[key] || row.date < firstByRound[key].date) firstByRound[key] = row;
+    });
+    var openerCount = {};
+    Object.keys(firstByRound).forEach(function (key) {
+      var id = firstByRound[key].itemId;
+      openerCount[id] = (openerCount[id] || 0) + 1;
+    });
     var wd = weekdayOf(date);
     var weekdayTotal = 0;
     var weekdayCount = {};
@@ -1096,6 +1106,7 @@
       datesByItem: datesByItem,
       sameDayIds: sameDayIds,
       roundIds: roundIds,
+      openerCount: openerCount,
       weekdayTotal: weekdayTotal,
       weekdayCount: weekdayCount,
       monthTotal: Math.max(1, monthTotal),
@@ -1143,43 +1154,21 @@
     var appearCount = centerDates.length;
 
     var daysScore = clamp(daysSince / 70 * 85, 0, 100);
-    var sessionScore = clamp(examsSince / Math.max(avgExamGap, 1) * 55, 0, 100);
-    daysScore = clamp(0.55 * daysScore + 0.45 * sessionScore, 0, 100);
+    var sessionScore = clamp(examsSince / Math.max(avgExamGap, 1) * 70, 0, 100);
+    daysScore = clamp(0.4 * daysScore + 0.6 * sessionScore, 0, 100);
 
     var calFit = 100 * gaussian(daysSince, avgGap, gapStd);
     var examFit = 100 * gaussian(examsSince, avgExamGap, examGapStd);
     var linCal = avgGap <= 0 ? 45 : clamp(100 - Math.abs(daysSince - avgGap) / Math.max(avgGap, 1) * 110, 0, 100);
     var linExam = avgExamGap <= 0 ? 45 : clamp(100 - Math.abs(examsSince - avgExamGap) / Math.max(avgExamGap, 1) * 110, 0, 100);
     var avgFit = clamp(0.25 * linCal + 0.2 * linExam + 0.25 * calFit + 0.3 * examFit, 0, 100);
-    var maxGapPressure = clamp(daysSince / maxGap * 55, 0, 100);
+    var maxGapPressure = clamp(daysSince / maxGap * 70, 0, 100);
 
     var chronicMul = 1;
-    if (dueRatio >= 2) chronicMul = clamp(0.95 - (dueRatio - 2) * 0.22, 0.35, 0.85);
-    else if (dueRatio >= 1.5) chronicMul = clamp(1 - (dueRatio - 1.5) * 0.28, 0.55, 1);
-    else if (appearCount >= 5 && dueRatio >= 1.3) chronicMul = clamp(1 - (dueRatio - 1.3) * 0.15, 0.7, 1);
-    daysScore *= chronicMul;
+    if (dueRatio >= 2.4) chronicMul = 0.85;
+    else if (dueRatio >= 2) chronicMul = 0.92;
     avgFit *= chronicMul;
-    maxGapPressure *= chronicMul;
-    if (dueRatio >= 1.8) avgFit = Math.min(avgFit, 48);
-    else if (dueRatio >= 1.45) avgFit = Math.min(avgFit, 62);
-
-    var examSessionsLast14 = 0;
-    for (i = 0; i < ctx.examDates.length; i++) {
-      if (daysBetween(ctx.examDates[i], date) <= 14) examSessionsLast14 += 1;
-    }
-    if (examSessionsLast14 >= 5) {
-      daysScore *= 0.28;
-      maxGapPressure *= 0.25;
-      avgFit *= 0.62;
-    } else if (examSessionsLast14 >= 3) {
-      daysScore *= 0.4;
-      maxGapPressure *= 0.35;
-      avgFit *= 0.72;
-    } else if (examSessionsLast14 >= 2) {
-      daysScore *= 0.55;
-      maxGapPressure *= 0.45;
-      avgFit *= 0.82;
-    }
+    if (dueRatio >= 2) avgFit = Math.min(avgFit, 55);
 
     var lastAppearOffset = indexFromEnd(ctx.seq, item.id);
     if (lastAppearOffset === 0) {
@@ -1283,19 +1272,19 @@
       }
       reason = labels.join(" · ");
     }
-    return { score: score, reason: reason, stats: s, factors: factors };
+    return { score: score, reason: reason, stats: s, factors: factors, dueSessions: examsSince };
   }
 
   function predict(date, session) {
     if (!isExamDate(date)) return [];
     session = session || sessionForDate(date);
     var ctx = buildPredictContext(date, session);
-    var boost = (state.calib && state.calib.boost) || {};
     var ranked = examItems().map(function (item) {
       var result = scoreItem(item, date, session, ctx);
+      var opener = (!ctx.roundIds.length ? (ctx.openerCount[item.id] || 0) * 14 : 0);
       return {
         item: item,
-        score: result.score + (boost[item.id] || 0),
+        score: result.score + (result.dueSessions || 0) * 24 + opener,
         reason: result.reason,
         stats: result.stats,
         factors: result.factors
@@ -1320,7 +1309,7 @@
   var calibBusy = false;
 
   function calibStamp() {
-    return "v3:" + simpleHash(state.records.map(function (row) {
+    return "v4:" + simpleHash(state.records.map(function (row) {
       return row.date + "\t" + row.session + "\t" + row.itemId;
     }).sort().join("|"));
   }
@@ -1951,7 +1940,7 @@
       '<p class="muted">홈 화면 아이콘은 예전 화면을 붙잡는 경우가 있습니다. 버튼을 누르면 새 파일을 다시 받습니다.</p>' +
       '<button class="btn btn-secondary" type="button" data-reload>화면 새로 받기</button>' +
       '<p class="section-title">예측 보정</p>' +
-      '<p class="muted">확인된 기출마다 그날 이전 기록만으로 예상을 다시 매겨, 실제 출제와 비교해 가중치를 조금씩 고칩니다. 이번 회차에 이미 나온 품목은 후보에서 빼고 잽니다. 20종을 아무거나 고르면 1위는 약 5%, 3위 안은 약 15%입니다.</p>' +
+      '<p class="muted">확인된 기출마다 그날 이전 기록만으로 예상을 다시 매깁니다. 이번 회차에 이미 나온 품목은 빼고, 오래 안 나온 품목을 앞에 둡니다. 회차 초반은 후보가 많아 1위 40%를 장담할 수 없고, 회차가 진행될수록 맞히기 쉬워집니다.</p>' +
       (state.calib && state.calib.n
         ? '<p class="lede tight">1위 ' + Math.round(100 * state.calib.top1 / state.calib.n) + "% · 3위 안 " + Math.round(100 * state.calib.top3 / state.calib.n) + "% · 5위 안 " + Math.round(100 * state.calib.top5 / state.calib.n) + "% · 시험일 " + state.calib.n + "번</p>"
         : '<p class="muted">기출이 더 쌓이면 적중률이 표시됩니다.</p>') +
