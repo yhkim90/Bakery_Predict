@@ -273,7 +273,7 @@
 (function () {
   var STORAGE_KEY = "bakery-predict-practical-v1";
   var SEED_HASH_KEY = STORAGE_KEY + "-seed-hash";
-  var APP_VERSION = "20260916j";
+  var APP_VERSION = "20260916l";
   var WEEK = ["일", "월", "화", "수", "목", "금", "토"];
 
   var ITEMS = [
@@ -1534,7 +1534,7 @@
       '<div class="topbar"><button class="ghost" type="button" data-reload>새로고침</button><h1>일자별 예상</h1><button class="ghost" data-go="/settings">시험장</button></div>' +
       '<p class="site">' + escapeHtml(state.site) + "</p>" +
       dateFieldHtml("home-date", date, "home-round", roundNo) +
-      '<p class="lede tight">' + dateLede + (isToday ? "" : ' <button type="button" class="inline" id="go-today">오늘</button>') + "</p>" +
+      '<p class="lede tight">' + dateLede + (isToday ? "" : ' <button type="button" class="inline" id="go-today">오늘로 이동</button>') + "</p>" +
       (learn ? '<p class="lede tight">' + learn + "</p>" : "") +
       rankHtml +
       '<div class="btn-row">' +
@@ -1746,10 +1746,17 @@
     var ranked = isExamDate(date) ? predict(date, session) : [];
     var byId = {};
     ranked.forEach(function (row, i) { byId[row.item.id] = { rank: i + 1, row: row }; });
+    var listed = examItems().slice().sort(function (a, b) {
+      var ra = byId[a.id] ? byId[a.id].rank : 999;
+      var rb = byId[b.id] ? byId[b.id].rank : 999;
+      return ra - rb;
+    });
     root.innerHTML =
       '<div class="topbar"><span class="ghost"></span><h1>제빵 품목</h1><span class="ghost"></span></div>' +
-      '<p class="lede">' + (isExamDate(date) ? formatKor(date) + (isFutureDate(date) ? " 진행 전 예상 순위입니다." : " 시험일 기준 순위입니다.") : "입력된 시험일이 없어 순위를 만들지 않았습니다.") + "</p>" +
-      '<div class="card">' + examItems().map(function (item) {
+      '<p class="lede">' + (isExamDate(date)
+        ? formatKor(date) + " 조회 기준 전체 예상 순위입니다. 1위부터 나열합니다."
+        : "입력된 시험일이 없어 순위를 만들지 않았습니다.") + "</p>" +
+      '<div class="card">' + listed.map(function (item) {
           var info = byId[item.id];
           var s = info ? info.row.stats : statsFor(item.id, date, session);
           var last = s.last ? s.last.date : "기록 없음";
