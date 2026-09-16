@@ -273,7 +273,7 @@
 (function () {
   var STORAGE_KEY = "bakery-predict-practical-v1";
   var SEED_HASH_KEY = STORAGE_KEY + "-seed-hash";
-  var APP_VERSION = "20260916l";
+  var APP_VERSION = "20260917a";
   var WEEK = ["일", "월", "화", "수", "목", "금", "토"];
 
   var ITEMS = [
@@ -937,7 +937,7 @@
     MarkovNext: 1.1,
     RotationBalance: 0.85,
     FamilyAffinity: 1.15,
-    RoundDup: 0.4,
+    RoundDup: 1.4,
     GroupAffinity: 0.25,
     GlobalFrequency: 0.75,
     MaxGapPressure: 0.2,
@@ -1301,6 +1301,7 @@
         factors: result.factors
       };
     }).filter(function (row) { return row.score > -9000; })
+      .filter(function (row) { return ctx.roundIds.indexOf(row.item.id) === -1; })
       .sort(function (a, b) { return b.score - a.score; });
     if (!ranked.length) return ranked;
     var maxS = ranked[0].score;
@@ -1319,13 +1320,13 @@
   var calibBusy = false;
 
   function calibStamp() {
-    return simpleHash(state.records.map(function (row) {
+    return "v3:" + simpleHash(state.records.map(function (row) {
       return row.date + "\t" + row.session + "\t" + row.itemId;
     }).sort().join("|"));
   }
 
   function nudgeBoost(map, id, delta) {
-    map[id] = clamp((map[id] || 0) + delta, -18, 18);
+    map[id] = clamp((map[id] || 0) + delta, -8, 8);
   }
 
   function applyCalibStep(ranked, actualId) {
@@ -1340,7 +1341,7 @@
       }
     }
     if (!rank || !actualRow) return { rank: 0 };
-    var lr = rank === 1 ? 0.04 : 0.12;
+    var lr = rank === 1 ? 0.02 : 0.05;
     var boost = state.calib.boost;
     nudgeBoost(boost, actualId, lr * (rank === 1 ? 1.2 : Math.min(rank, 8)));
     if (rank > 1) {
@@ -1358,7 +1359,7 @@
           if (skip[key]) return;
           var d = (actualRaw[key] || 0) - (winRaw[key] || 0);
           var mul = state.calib.factorMul[key] || 1;
-          state.calib.factorMul[key] = clamp(mul * (1 + lr * 0.0035 * d), 0.55, 1.65);
+          state.calib.factorMul[key] = clamp(mul * (1 + lr * 0.002 * d), 0.8, 1.25);
         });
       }
     }
@@ -1950,7 +1951,7 @@
       '<p class="muted">홈 화면 아이콘은 예전 화면을 붙잡는 경우가 있습니다. 버튼을 누르면 새 파일을 다시 받습니다.</p>' +
       '<button class="btn btn-secondary" type="button" data-reload>화면 새로 받기</button>' +
       '<p class="section-title">예측 보정</p>' +
-      '<p class="muted">확인된 기출마다 그날 이전 기록만으로 예상을 다시 매겨, 실제 출제와 비교해 가중치를 조금씩 고칩니다.</p>' +
+      '<p class="muted">확인된 기출마다 그날 이전 기록만으로 예상을 다시 매겨, 실제 출제와 비교해 가중치를 조금씩 고칩니다. 이번 회차에 이미 나온 품목은 후보에서 빼고 잽니다. 20종을 아무거나 고르면 1위는 약 5%, 3위 안은 약 15%입니다.</p>' +
       (state.calib && state.calib.n
         ? '<p class="lede tight">1위 ' + Math.round(100 * state.calib.top1 / state.calib.n) + "% · 3위 안 " + Math.round(100 * state.calib.top3 / state.calib.n) + "% · 5위 안 " + Math.round(100 * state.calib.top5 / state.calib.n) + "% · 시험일 " + state.calib.n + "번</p>"
         : '<p class="muted">기출이 더 쌓이면 적중률이 표시됩니다.</p>') +
