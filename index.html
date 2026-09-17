@@ -71,10 +71,32 @@
     .field { display: flex; flex-direction: column; gap: 6px; }
     .field span, .section-title { color: var(--muted); font-size: 13px; font-weight: 700; }
     .section-title { margin: 18px 0 8px; }
-    input[type="text"], input[type="date"], input[type="month"], input[type="file"], select, textarea {
+    input[type="text"], input[type="date"], input[type="month"], input[type="number"], input[type="file"], select, textarea {
       width: 100%; min-height: var(--tap); padding: 10px 12px;
       border: 1px solid var(--line); border-radius: 12px; background: var(--surface);
     }
+    .lookup {
+      display: grid; grid-template-columns: 52px minmax(0, 1fr) 72px 52px;
+      gap: 6px; align-items: stretch; margin-bottom: 12px;
+    }
+    .lookup > .ghost {
+      display: flex; align-items: center; justify-content: center;
+      min-width: 0; padding: 0 4px; border-radius: 12px; background: #efe4d8;
+    }
+    .lookup .date-wrap, .lookup .round-wrap {
+      position: relative; min-width: 0; overflow: hidden;
+      border: 1px solid var(--line); border-radius: 12px; background: var(--surface);
+    }
+    .lookup .date-face, .lookup .round-face {
+      min-height: var(--tap); display: flex; align-items: center; justify-content: center;
+      font-size: 14px; font-weight: 700; pointer-events: none;
+    }
+    .lookup .date-wrap input, .lookup .round-wrap input {
+      position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0;
+      margin: 0; padding: 0; opacity: 0.02; border: 0; border-radius: 12px;
+      background: transparent; color: transparent; font-size: 16px;
+    }
+    .lookup .round-face { font-size: 15px; }
     textarea { min-height: 180px; resize: vertical; line-height: 1.5; }
     .sample {
       margin: 0; padding: 12px 14px; border-radius: 12px; background: #efe4d8;
@@ -208,6 +230,12 @@
   function formatKor(str) {
     var d = parseDate(str);
     return d.getFullYear() + "." + pad(d.getMonth() + 1) + "." + pad(d.getDate()) + " (" + WEEK[d.getDay()] + ")";
+  }
+
+  function shiftDate(str, days) {
+    var d = parseDate(str);
+    d.setDate(d.getDate() + days);
+    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
   }
 
   function shiftMonth(ym, delta) {
@@ -563,6 +591,59 @@
       });
   }
 
+  var hitCache = { key: "", value: null };
+
+  function hitRateUntil(untilDate) {
+    var n = state.records.length;
+    var last = n ? state.records[n - 1] : null;
+    var key = untilDate + "|" + n + "|" + (last ? last.date + ":" + last.itemId + ":" + last.session : "");
+    if (hitCache.key === key) return hitCache.value;
+    var empty = { n: 0, top1: 0, top3: 0, top5: 0 };
+    if (!window.BakeryPredict || !window.BakeryPredict.walkForward || !n) {
+      hitCache = { key: key, value: empty };
+      return empty;
+    }
+    var subset = state.records.filter(function (row) { return row.date <= untilDate; });
+    var m = BakeryPredict.walkForward(subset, ITEMS, "hybrid", BakeryPredict.DEFAULT_W);
+    var value = { n: m.n || 0, top1: m.top1 || 0, top3: m.top3 || 0, top5: m.top5 || 0 };
+    hitCache = { key: key, value: value };
+    return value;
+  }
+
+  function fmtHit(v) {
+    return (v * 100).toFixed(0) + "%";
+  }
+
+  function hitRateCardsHtml(hit) {
+    if (!hit || !hit.n) {
+      return '<div class="card"><small>오늘까지 1위</small><strong>-</strong></div>' +
+        '<div class="card"><small>3위 안</small><strong>-</strong></div>' +
+        '<div class="card"><small>검증 일수</small><strong>-</strong></div>';
+    }
+    return '<div class="card"><small>오늘까지 1위</small><strong>' + fmtHit(hit.top1) + "</strong></div>" +
+      '<div class="card"><small>3위 안</small><strong>' + fmtHit(hit.top3) + "</strong></div>" +
+      '<div class="card"><small>검증 일수</small><strong>' + hit.n + "</strong></div>";
+  }
+
+  function hitRateLine(hit) {
+    if (!hit || !hit.n) return "오늘까지 맞춰볼 확정 기출이 아직 부족합니다.";
+    return "오늘까지 적중 · 1위 " + fmtHit(hit.top1) + " · 3위 안 " + fmtHit(hit.top3) + " · " + hit.n + "일";
+  }
+
+  function fillHitRate(untilDate) {
+    function paint(hit) {
+      var stats = document.getElementById("hit-stats");
+      if (stats) stats.innerHTML = hitRateCardsHtml(hit);
+      var line = document.getElementById("hit-lede");
+      if (line) line.textContent = hitRateLine(hit);
+    }
+    if (hitCache.key.indexOf(untilDate + "|") === 0 && hitCache.value) {
+      paint(hitCache.value);
+      return;
+    }
+    setTimeout(function () { paint(hitRateUntil(untilDate)); }, 0);
+  }
+
   function parseHash() {
     var raw = location.hash.replace(/^#/, "") || "/";
     var split = raw.split("?");
@@ -576,9 +657,33 @@
 
   function go(hash) { location.hash = hash; }
 
+  var lastPredictPath = "/";
+
+  function predictPath(date, session) {
+    var q = [];
+    if (date) q.push("d=" + date);
+    if (session) q.push("r=" + Number(session));
+    return q.length ? "/?" + q.join("&") : "/";
+  }
+
+  function dateNavHtml(date, roundNo) {
+    return '<div class="lookup">' +
+      '<button class="ghost" type="button" id="prev-day">이전</button>' +
+      '<div class="date-wrap">' +
+        '<div class="date-face">' + escapeHtml(date.replace(/-/g, ".")) + "</div>" +
+        '<input id="home-date" type="date" value="' + date + '">' +
+      "</div>" +
+      '<div class="round-wrap">' +
+        '<div class="round-face">' + sessionLabel(roundNo) + "</div>" +
+        '<input id="home-round" type="number" min="1" max="366" value="' + roundNo + '">' +
+      "</div>" +
+      '<button class="ghost" type="button" id="next-day">다음</button>' +
+      "</div>";
+  }
+
   function tabBar(active) {
     return '<nav class="tabbar">' +
-      '<button type="button" class="' + (active === "predict" ? "on" : "") + '" data-go="/">예상</button>' +
+      '<button type="button" class="' + (active === "predict" ? "on" : "") + '" data-go="' + lastPredictPath + '">예상</button>' +
       '<button type="button" class="' + (active === "month" ? "on" : "") + '" data-go="/month">월별</button>' +
       '<button type="button" class="' + (active === "log" ? "on" : "") + '" data-go="/log">기록</button>' +
       '<button type="button" class="' + (active === "items" ? "on" : "") + '" data-go="/items">품목</button>' +
@@ -602,9 +707,13 @@
   }
 
   function renderHome() {
-    var date = todayStr();
+    var parsed = parseHash();
+    var date = parseLooseDate(parsed.params.get("d")) || todayStr();
+    var pinnedRound = parseSession(parsed.params.get("r"));
     var year = yearOf(date);
-    var ranked = predict(date, null);
+    var roundNo = pinnedRound || inferSession(date);
+    lastPredictPath = predictPath(date, pinnedRound || roundNo);
+    var ranked = predict(date, roundNo);
     var monthRows = recordsInMonth(monthStr(date));
     var unique = {};
     monthRows.forEach(function (row) {
@@ -613,11 +722,15 @@
     });
     var top = ranked.slice(0, 5);
     var latest = lastSession(year);
-    var roundNo = inferSession(date);
     var roundRows = recordsInRound(year, roundNo);
+    var today = todayStr();
     root.innerHTML =
       '<div class="topbar"><span class="ghost"></span><h1>일자별 예상</h1><button class="ghost" data-go="/settings">시험장</button></div>' +
-      '<p class="site">' + escapeHtml(state.site) + " · 제빵 실기 · " + year + "년 " + (latest ? sessionLabel(latest) : "") + "</p>" +
+      '<p class="site">' + escapeHtml(state.site) + " · " + year + "년 " + (latest ? sessionLabel(latest) : "") + "</p>" +
+      dateNavHtml(date, roundNo) +
+      '<p class="lede">' + formatKor(date) + " 예상 · " + sessionLabel(roundNo) +
+      (date === today ? "" : ' · <button class="ghost" type="button" data-go="' + predictPath(today, inferSession(today)) + '" style="min-width:auto;display:inline;padding:0">오늘로 이동</button>') +
+      "</p>" +
       '<div class="stats">' +
         '<div class="card"><small>이번 회차</small><strong>' + sessionLabel(roundNo) + "</strong></div>" +
         '<div class="card"><small>이번 회차 일수</small><strong>' + roundRows.length + "</strong></div>" +
@@ -625,11 +738,35 @@
       "</div>" +
       '<p class="lede">기본 출제율과 최근 반복을 반영한 상대 예측확률입니다. 항목을 누르면 근거가 나옵니다.</p>' +
       (state.records.length ? renderRankList(top) : '<div class="empty card">아직 기출이 없습니다. 회차와 날짜를 넣으면 예상이 생깁니다.</div>') +
-      '<button class="btn btn-primary" data-go="/day/' + date + '">오늘 자세히</button>' +
-      '<button class="btn btn-secondary" data-go="/new">기출 입력</button>' +
+      '<p class="section-title">오늘까지 적중률</p>' +
+      '<div class="stats" id="hit-stats">' +
+        '<div class="card"><small>오늘까지 1위</small><strong>…</strong></div>' +
+        '<div class="card"><small>3위 안</small><strong>…</strong></div>' +
+        '<div class="card"><small>검증 일수</small><strong>…</strong></div>' +
+      "</div>" +
+      '<p class="lede">확정 기출만, 그날 이전 기록으로만 맞춰 본 값입니다.</p>' +
+      '<button class="btn btn-primary" data-go="/day/' + date + '?r=' + roundNo + '">이 날짜 자세히</button>' +
+      '<button class="btn btn-secondary" data-go="/new?date=' + date + '">기출 입력</button>' +
       tabBar("predict");
     bindNav();
     bindWhy();
+    document.getElementById("prev-day").addEventListener("click", function () {
+      go(predictPath(shiftDate(date, -1), pinnedRound));
+    });
+    document.getElementById("next-day").addEventListener("click", function () {
+      go(predictPath(shiftDate(date, 1), pinnedRound));
+    });
+    document.getElementById("home-date").addEventListener("change", function () {
+      var next = parseLooseDate(this.value);
+      if (!next) return;
+      go(predictPath(next, pinnedRound));
+    });
+    document.getElementById("home-round").addEventListener("change", function () {
+      var n = parseSession(this.value);
+      if (!n) return;
+      go(predictPath(date, n));
+    });
+    fillHitRate(today);
   }
 
   function whyHtml(why) {
@@ -691,12 +828,12 @@
         }).join("") + "</div>"
       : '<p class="muted">이 날짜 확정 기출은 아직 없습니다.</p>';
 
+    lastPredictPath = predictPath(date, session);
     root.innerHTML =
-      '<div class="topbar"><button class="ghost" data-go="/">닫기</button><h2>일자 예상</h2><button class="ghost" data-go="/new?date=' + date + '">입력</button></div>' +
+      '<div class="topbar"><button class="ghost" data-go="' + lastPredictPath + '">닫기</button><h2>일자 예상</h2><button class="ghost" data-go="/new?date=' + date + '">입력</button></div>' +
       '<p class="site">' + escapeHtml(state.site) + " · 같은 회차에 시험일 여러 날</p>" +
-      '<div class="field"><span>날짜</span><input id="day-date" type="date" value="' + date + '"></div>' +
-      '<label class="field" style="margin-top:12px"><span>회차</span><input id="day-round" type="number" min="1" max="366" value="' + session + '"></label>' +
-      '<p class="lede" style="margin-top:12px">' + formatKor(date) + " · " + sessionLabel(session) + " · " + roundRows.length + "날</p>" +
+      dateNavHtml(date, session) +
+      '<p class="lede" style="margin-top:0">' + formatKor(date) + " · " + sessionLabel(session) + " · " + roundRows.length + "날</p>" +
       '<p class="section-title">이 날짜</p>' + actualHtml +
       '<p class="section-title">상대 예측확률</p>' +
       renderRankList(top) +
@@ -708,10 +845,18 @@
       tabBar("predict");
     bindNav();
     bindWhy();
-    document.getElementById("day-date").addEventListener("change", function () {
-      go("/day/" + this.value);
+    document.getElementById("prev-day").addEventListener("click", function () {
+      go("/day/" + shiftDate(date, -1) + "?r=" + session);
     });
-    document.getElementById("day-round").addEventListener("change", function () {
+    document.getElementById("next-day").addEventListener("click", function () {
+      go("/day/" + shiftDate(date, 1) + "?r=" + session);
+    });
+    document.getElementById("home-date").addEventListener("change", function () {
+      var next = parseLooseDate(this.value);
+      if (!next) return;
+      go("/day/" + next + "?r=" + session);
+    });
+    document.getElementById("home-round").addEventListener("change", function () {
       var n = parseSession(this.value);
       if (!n) return;
       go("/day/" + date + "?r=" + n);
@@ -806,16 +951,25 @@
   }
 
   function renderItems() {
-    var date = todayStr();
-    var ranked = predict(date, null);
+    var q = (lastPredictPath.split("?")[1] || "");
+    var params = new URLSearchParams(q);
+    var date = parseLooseDate(params.get("d")) || todayStr();
+    var session = parseSession(params.get("r")) || inferSession(date);
+    var ranked = predict(date, session);
     var byId = {};
     ranked.forEach(function (row, i) { byId[row.item.id] = { rank: i + 1, row: row }; });
+    var list = examItems().slice().sort(function (a, b) {
+      var ra = byId[a.id] ? byId[a.id].rank : 999;
+      var rb = byId[b.id] ? byId[b.id].rank : 999;
+      return ra - rb;
+    });
     root.innerHTML =
       '<div class="topbar"><span class="ghost"></span><h1>제빵 품목</h1><span class="ghost"></span></div>' +
-      '<p class="lede">2026 실기 공개과제 20종입니다. 공백이 길수록 오늘 예상 순위가 올라갑니다.</p>' +
-      '<div class="card">' + examItems().map(function (item) {
+      '<p class="lede">' + formatKor(date) + " 예상 순위 순입니다. 같은 날 이미 나온 품목은 맨 아래입니다.</p>" +
+      '<p class="lede" id="hit-lede">오늘까지 적중률을 계산하는 중…</p>' +
+      '<div class="card">' + list.map(function (item) {
           var info = byId[item.id];
-          var s = statsFor(item.id, date, inferSession(date));
+          var s = statsFor(item.id, date, session);
           var last = s.last ? s.last.date : "기록 없음";
           return '<div class="item-link"><div><strong>' + escapeHtml(item.name) + "</strong><span>" +
             "최근 " + last + " · 누적 " + s.total + "회</span></div>" +
@@ -823,6 +977,7 @@
         }).join("") + "</div>" +
       tabBar("items");
     bindNav();
+    fillHitRate(todayStr());
   }
 
   function editorState(existing) {
