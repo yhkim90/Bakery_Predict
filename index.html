@@ -117,6 +117,7 @@
       padding: 12px 0; border-bottom: 1px solid var(--line);
     }
     .rank:last-child { border-bottom: 0; }
+    .rank.hit { background: #f4ebe2; margin: 0 -16px; padding-left: 16px; padding-right: 16px; border-radius: 12px; }
     .num {
       width: 28px; height: 28px; border-radius: 999px; background: var(--accent); color: #fff;
       display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700;
@@ -850,22 +851,33 @@
     if (!isExamPredictDate(date)) return [];
     session = session || inferSession(date);
     if (!window.BakeryPredict) return [];
-    var taken = {};
-    recordsOn(date).forEach(function (row) { taken[row.itemId] = true; });
+    var actualIds = {};
+    recordsOn(date).forEach(function (row) {
+      if (row.itemId && row.itemId !== "unknown" && row.itemId !== "none") actualIds[row.itemId] = true;
+    });
     return BakeryPredict.predict(state.records, currentItems(), date, session)
-      .filter(function (row) { return !taken[row.id]; })
-      .map(function (row) {
+      .map(function (row, i) {
         return {
           item: row.item,
           id: row.id,
+          rank: i + 1,
           score: row.score,
           prob: row.prob,
           pct: row.pct,
+          actual: !!actualIds[row.id],
           reason: row.pct.toFixed(1) + "% · 상대 예측확률",
           why: row.why,
           feat: row.feat
         };
       });
+  }
+
+  function topRanks(ranked, n) {
+    var top = ranked.slice(0, n);
+    ranked.forEach(function (row) {
+      if (row.actual && top.indexOf(row) === -1) top.push(row);
+    });
+    return top;
   }
 
   var hitCache = { key: "", value: null };
@@ -1145,7 +1157,7 @@
       var item = findItem(row.itemId);
       if (item && !item.skip) unique[row.itemId] = true;
     });
-    var top = ranked.slice(0, 5);
+    var top = topRanks(ranked, 5);
     var latest = lastSession(year);
     var roundRows = recordsInRound(year, roundNo);
     var examRoundN = roundRows.filter(function (row) { return row.itemId !== "none"; }).length;
@@ -1218,14 +1230,16 @@
   function renderRankList(rows) {
     if (!rows.length) return '<div class="empty card">같은 날 이미 나온 품목을 제외하면 남은 후보가 없습니다.</div>';
     return '<div class="card" id="rank-box">' + rows.map(function (row, i) {
+      var rankNo = row.rank || (i + 1);
       var bar = Math.max(6, Math.round((row.prob || 0) * 100 * 3));
-      return '<button type="button" class="rank" data-why="' + i + '">' +
-        '<div class="num' + (i > 2 ? " dim" : "") + '">' + (i + 1) + "</div>" +
-        "<div><strong>" + escapeHtml(row.item.name) + '</strong><small>' +
-        (row.pct != null ? row.pct.toFixed(1) : "") + "% · 상대 예측확률</small>" +
+      return '<button type="button" class="rank' + (row.actual ? " hit" : "") + '" data-why="' + i + '">' +
+        '<div class="num' + (rankNo > 3 ? " dim" : "") + '">' + rankNo + "</div>" +
+        "<div><strong>" + escapeHtml(row.item.name) + "</strong><small>" +
+        (row.pct != null ? row.pct.toFixed(1) : "") + "% · 상대 예측확률" +
+        (row.actual ? " · 출제" : "") + "</small>" +
         '<div class="bar"><i style="width:' + Math.min(100, bar) + '%"></i></div>' +
         '<div class="why hidden" id="why-' + i + '">' + whyHtml(row.why) + "</div></div>" +
-        '<span class="pct">' + (row.pct != null ? row.pct.toFixed(1) : "") + "%</span>" +
+        '<span class="pct">' + (row.actual ? "출제" : (row.pct != null ? row.pct.toFixed(1) + "%" : "")) + "</span>" +
         "</button>";
     }).join("") + "</div>";
   }
@@ -1247,7 +1261,7 @@
     var actual = recordsOn(date);
     var session = parsed.params.get("r") ? parseSession(parsed.params.get("r")) : (actual.length ? actual[0].session : inferSession(date));
     var ranked = predict(date, session);
-    var top = ranked.slice(0, 5);
+    var top = topRanks(ranked, 5);
     var roundRows = recordsInRound(yearOf(date), session);
     var used = {};
     var unknownCount = 0;
