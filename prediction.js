@@ -38,6 +38,10 @@
     });
   }
 
+  function withoutClosedDays(records) {
+    return records.filter(function (row) { return row.itemId !== "none"; });
+  }
+
   function priorByDate(records, date) {
     return records.filter(function (row) { return row.date < date; });
   }
@@ -335,7 +339,7 @@
   }
 
   function walkForward(records, items, mode, w) {
-    var exams = labeled(records, items);
+    var exams = labeled(withoutClosedDays(records), items);
     var acc = { n: 0, top1: 0, top3: 0, top5: 0, mrr: 0, logloss: 0, brier: 0 };
     var t;
     for (t = MIN_HIST; t < exams.length; t++) {
@@ -410,7 +414,7 @@
   }
 
   function predict(records, items, date, session) {
-    var exams = labeled(priorByDate(records, date), items);
+    var exams = labeled(priorByDate(withoutClosedDays(records), date), items);
     var rows = rankBy(exams, date, session, items, "remain", DEFAULT_W);
     var ids = examItems(items).map(function (item) { return item.id; });
     return rows.map(function (row) {

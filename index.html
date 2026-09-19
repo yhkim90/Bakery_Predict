@@ -185,11 +185,12 @@
       background: #efe4d8; color: var(--accent); font-weight: 700; font-size: 15px;
     }
     .actual.dim { font-weight: 600; color: var(--muted); }
+    .lookup > .ghost:disabled { opacity: 0.35; cursor: default; }
   </style>
 </head>
 <body>
   <main class="app" id="app"></main>
-  <script src="prediction.js?v=4"></script>
+  <script src="prediction.js?v=5"></script>
   <script>
 (function () {
   var STORAGE_KEY = "bakery-predict-practical-v1";
@@ -745,6 +746,55 @@
       .sort(function (a, b) { return a.session - b.session; });
   }
 
+  function isExamPredictDate(date) {
+    return recordsOn(date).some(function (row) { return row.itemId !== "none"; });
+  }
+
+  function allExamDates() {
+    var seen = {};
+    var dates = [];
+    state.records.forEach(function (row) {
+      if (row.itemId === "none" || seen[row.date]) return;
+      seen[row.date] = true;
+      dates.push(row.date);
+    });
+    dates.sort();
+    return dates;
+  }
+
+  function prevExamDate(date) {
+    var prev = "";
+    allExamDates().forEach(function (d) {
+      if (d < date) prev = d;
+    });
+    return prev;
+  }
+
+  function nextExamDate(date) {
+    var dates = allExamDates();
+    var i;
+    for (i = 0; i < dates.length; i++) {
+      if (dates[i] > date) return dates[i];
+    }
+    return "";
+  }
+
+  function nearestExamDate(date) {
+    var dates = allExamDates();
+    if (!dates.length) return "";
+    if (dates.indexOf(date) !== -1) return date;
+    var i;
+    for (i = 0; i < dates.length; i++) {
+      if (dates[i] >= date) return dates[i];
+    }
+    return dates[dates.length - 1];
+  }
+
+  function resolveExamDate(date) {
+    if (isExamPredictDate(date)) return date;
+    return nearestExamDate(date) || date;
+  }
+
   function recordsInMonth(ym) {
     return state.records
       .filter(function (row) { return monthStr(row.date) === ym; })
@@ -797,6 +847,7 @@
   }
 
   function predict(date, session) {
+    if (!isExamPredictDate(date)) return [];
     session = session || inferSession(date);
     if (!window.BakeryPredict) return [];
     var taken = {};
@@ -823,7 +874,7 @@
   function hitRateKey(untilDate) {
     var n = state.records.length;
     var last = n ? state.records[n - 1] : null;
-    return state.subject + "|" + untilDate + "|" + n + "|" + (last ? last.date + ":" + last.itemId + ":" + last.session : "");
+    return "remain-exam|" + state.subject + "|" + untilDate + "|" + n + "|" + (last ? last.date + ":" + last.itemId + ":" + last.session : "");
   }
 
   function labeledCountUntil(untilDate) {
@@ -845,7 +896,9 @@
     }
     if (!n) return empty;
     try {
-      var subset = state.records.filter(function (row) { return row.date <= untilDate; });
+      var subset = state.records.filter(function (row) {
+        return row.date <= untilDate && row.itemId !== "none";
+      });
       var m = BakeryPredict.walkForward(subset, currentItems(), "remain", BakeryPredict.DEFAULT_W);
       var value = {
         n: m.n || 0,
@@ -888,7 +941,7 @@
       if (labeledN <= 20) return "확정 기출이 " + labeledN + "일입니다. 검증은 20일 이후부터입니다.";
       return "오늘까지 맞춰볼 확정 기출이 아직 부족합니다.";
     }
-    return "확정 기출만, 그날 이전 기록으로만 맞춰 본 값입니다.";
+    return "미실시는 빼고, 확정 시험일만 회차 잔여+공백 로직으로 맞춰 본 값입니다.";
   }
 
   function fillHitRate(untilDate) {
@@ -1030,8 +1083,10 @@
   }
 
   function dateNavHtml(date, roundNo) {
+    var prev = prevExamDate(date);
+    var next = nextExamDate(date);
     return '<div class="lookup">' +
-      '<button class="ghost" type="button" id="prev-day">이전</button>' +
+      '<button class="ghost" type="button" id="prev-day"' + (prev ? "" : " disabled") + ">이전</button>" +
       '<div class="date-wrap">' +
         '<div class="date-face">' + escapeHtml(date.replace(/-/g, ".")) + "</div>" +
         '<input id="home-date" type="date" value="' + date + '">' +
@@ -1040,7 +1095,7 @@
         '<div class="round-face">' + sessionLabel(roundNo) + "</div>" +
         '<input id="home-round" type="number" min="1" max="366" value="' + roundNo + '">' +
       "</div>" +
-      '<button class="ghost" type="button" id="next-day">다음</button>' +
+      '<button class="ghost" type="button" id="next-day"' + (next ? "" : " disabled") + ">다음</button>" +
       "</div>";
   }
 
@@ -1073,8 +1128,13 @@
 
   function renderHome() {
     var parsed = parseHash();
-    var date = parseLooseDate(parsed.params.get("d")) || todayStr();
+    var requested = parseLooseDate(parsed.params.get("d")) || todayStr();
+    var date = resolveExamDate(requested);
     var pinnedRound = parseSession(parsed.params.get("r"));
+    if (date !== requested) {
+      go(predictPath(date, pinnedRound || inferSession(date)));
+      return;
+    }
     var year = yearOf(date);
     var roundNo = pinnedRound || inferSession(date);
     lastPredictPath = predictPath(date, pinnedRound || roundNo);
@@ -1088,7 +1148,10 @@
     var top = ranked.slice(0, 5);
     var latest = lastSession(year);
     var roundRows = recordsInRound(year, roundNo);
+    var examRoundN = roundRows.filter(function (row) { return row.itemId !== "none"; }).length;
     var today = todayStr();
+    var todayExam = resolveExamDate(today);
+    var examDay = isExamPredictDate(date);
     root.innerHTML =
       '<div class="topbar"><button class="ghost" type="button" id="refresh-app">새로고침</button><h1>' + currentMeta().name + ' 예상</h1><button class="ghost" data-go="/settings">시험장</button></div>' +
       subjectSwitchHtml() +
@@ -1096,22 +1159,26 @@
       dateNavHtml(date, roundNo) +
       actualBannerHtml(date, roundNo) +
       '<p class="lede">' + formatKor(date) + " 예상 · " + sessionLabel(roundNo) +
-      (date === today ? "" : ' · <button class="ghost" type="button" data-go="' + predictPath(today, inferSession(today)) + '" style="min-width:auto;display:inline;padding:0">오늘로 이동</button>') +
+      (date === todayExam ? "" : ' · <button class="ghost" type="button" data-go="' + predictPath(todayExam, inferSession(todayExam)) + '" style="min-width:auto;display:inline;padding:0">오늘로 이동</button>') +
       "</p>" +
       '<div class="stats">' +
         '<div class="card"><small>이번 회차</small><strong>' + sessionLabel(roundNo) + "</strong></div>" +
-        '<div class="card"><small>이번 회차 일수</small><strong>' + roundRows.length + "</strong></div>" +
+        '<div class="card"><small>이번 회차 시험일</small><strong>' + examRoundN + "</strong></div>" +
         '<div class="card"><small>이번 달 품목</small><strong>' + Object.keys(unique).length + "</strong></div>" +
       "</div>" +
-      '<p class="lede">이번 회차에 아직 안 나온 품목만 보고, 오래 쉰 품목과 회차 첫날 단골을 앞에 둡니다.</p>' +
-      (state.records.length ? renderRankList(top) : '<div class="empty card">아직 기출이 없습니다. 회차와 날짜를 넣으면 예상이 생깁니다.</div>') +
+      '<p class="lede">미실시는 건너뜁니다. 이번 회차 잔여 품목과 공백, 회차 첫날 단골로 예상합니다.</p>' +
+      (!state.records.length
+        ? '<div class="empty card">아직 기출이 없습니다. 회차와 날짜를 넣으면 예상이 생깁니다.</div>'
+        : examDay
+          ? renderRankList(top)
+          : '<div class="empty card">시험 없는 날입니다. 이전/다음으로 시험일로 이동하세요.</div>') +
       '<p class="section-title">오늘까지 적중률</p>' +
       '<div class="stats" id="hit-stats">' +
         '<div class="card"><small>오늘까지 1위</small><strong>…</strong></div>' +
         '<div class="card"><small>3위 안</small><strong>…</strong></div>' +
         '<div class="card"><small>검증 일수</small><strong>…</strong></div>' +
       "</div>" +
-      '<p class="lede" id="hit-lede">확정 기출만, 그날 이전 기록으로만 맞춰 본 값입니다.</p>' +
+      '<p class="lede" id="hit-lede">미실시는 빼고, 확정 시험일만 회차 잔여+공백 로직으로 맞춰 본 값입니다.</p>' +
       '<button class="btn btn-primary" data-go="/day/' + date + '?r=' + roundNo + '">이 날짜 자세히</button>' +
       '<button class="btn btn-secondary" data-go="/new?date=' + date + '">기출 입력</button>' +
       tabBar("predict");
@@ -1119,13 +1186,15 @@
     bindRefresh();
     bindWhy();
     document.getElementById("prev-day").addEventListener("click", function () {
-      go(predictPath(shiftDate(date, -1), pinnedRound));
+      var prev = prevExamDate(date);
+      if (prev) go(predictPath(prev, pinnedRound));
     });
     document.getElementById("next-day").addEventListener("click", function () {
-      go(predictPath(shiftDate(date, 1), pinnedRound));
+      var next = nextExamDate(date);
+      if (next) go(predictPath(next, pinnedRound));
     });
     document.getElementById("home-date").addEventListener("change", function () {
-      var next = parseLooseDate(this.value);
+      var next = resolveExamDate(parseLooseDate(this.value));
       if (!next) return;
       go(predictPath(next, pinnedRound));
     });
@@ -1203,10 +1272,13 @@
       '<p class="site">' + escapeHtml(state.site) + " · 같은 회차에 시험일 여러 날</p>" +
       dateNavHtml(date, session) +
       actualBannerHtml(date, session) +
-      '<p class="lede" style="margin-top:0">' + formatKor(date) + " · " + sessionLabel(session) + " · " + roundRows.length + "날</p>" +
+      '<p class="lede" style="margin-top:0">' + formatKor(date) + " · " + sessionLabel(session) + " · 시험일 " +
+      roundRows.filter(function (row) { return row.itemId !== "none"; }).length + "날</p>" +
       '<p class="section-title">이 날짜</p>' + actualHtml +
       '<p class="section-title">상대 예측확률</p>' +
-      renderRankList(top) +
+      (isExamPredictDate(date)
+        ? renderRankList(top)
+        : '<div class="empty card">시험 없는 날이라 예상을 하지 않습니다.</div>') +
       '<p class="muted" style="margin-top:14px">이번 회차 미확인 ' + unknownCount + " · 미실시 " + skipCount + "</p>" +
       '<p class="section-title">이번 회차 확인 품목</p>' +
       (Object.keys(used).length
@@ -1216,15 +1288,17 @@
     bindNav();
     bindWhy();
     document.getElementById("prev-day").addEventListener("click", function () {
-      go("/day/" + shiftDate(date, -1) + "?r=" + session);
+      var prev = prevExamDate(date);
+      if (prev) go("/day/" + prev + "?s=" + state.subject + "&r=" + session);
     });
     document.getElementById("next-day").addEventListener("click", function () {
-      go("/day/" + shiftDate(date, 1) + "?r=" + session);
+      var next = nextExamDate(date);
+      if (next) go("/day/" + next + "?s=" + state.subject + "&r=" + session);
     });
     document.getElementById("home-date").addEventListener("change", function () {
-      var next = parseLooseDate(this.value);
+      var next = resolveExamDate(parseLooseDate(this.value));
       if (!next) return;
-      go("/day/" + next + "?r=" + session);
+      go("/day/" + next + "?s=" + state.subject + "&r=" + session);
     });
     document.getElementById("home-round").addEventListener("change", function () {
       var n = parseSession(this.value);
