@@ -235,6 +235,31 @@
     return s;
   }
 
+  function openerCounts(exams) {
+    var firsts = {};
+    var seen = {};
+    exams.forEach(function (row) {
+      var key = yearOf(row.date) + ":" + row.session;
+      if (seen[key]) return;
+      seen[key] = true;
+      firsts[row.itemId] = (firsts[row.itemId] || 0) + 1;
+    });
+    return firsts;
+  }
+
+  function isRoundOpener(exams, date, session) {
+    return !exams.some(function (row) {
+      return yearOf(row.date) === yearOf(date) && Number(row.session) === Number(session);
+    });
+  }
+
+  function remainScore(itemId, feat, ctx) {
+    if (feat.inRound) return -1e6;
+    var score = feat.wait;
+    if (ctx.isOpener) score += (ctx.openers[itemId] || 0) * 30;
+    return score;
+  }
+
   function logMix(feat, w) {
     function lg(p) { return Math.log(Math.max(p, 1e-8)); }
     return w.base * lg(feat.decayed) +
@@ -246,8 +271,14 @@
 
   function rankBy(exams, date, session, items, mode, w) {
     var ids = examItems(items).map(function (item) { return item.id; });
+    var ctx = {
+      isOpener: isRoundOpener(exams, date, session),
+      openers: openerCounts(exams)
+    };
     var rows = examItems(items).map(function (item) {
       var feat = featureRow(item.id, exams, date, session, ids);
+      feat.isOpenerDay = ctx.isOpener;
+      feat.openerHits = ctx.openers[item.id] || 0;
       var score = mode === "old"
         ? oldScore(item.id, exams, date, session)
         : mode === "freq"
@@ -256,9 +287,15 @@
             ? Math.log(feat.recent)
             : mode === "hybrid"
               ? hybridScore(feat)
-              : logMix(feat, w);
+              : mode === "remain"
+                ? remainScore(item.id, feat, ctx)
+                : logMix(feat, w);
       return { id: item.id, item: item, score: score, feat: feat };
     });
+    if (mode === "remain") {
+      var unused = rows.filter(function (row) { return !row.feat.inRound; });
+      if (unused.length) rows = unused;
+    }
     if (mode !== "old") {
       var probs = softmax(rows.map(function (row) { return row.score; }), mode === "stat" ? 0.85 : 1);
       rows.forEach(function (row, i) { row.prob = probs[i]; });
@@ -342,7 +379,8 @@
       freq: walkForward(records, items, "freq", DEFAULT_W),
       recent: walkForward(records, items, "recent", DEFAULT_W),
       old: walkForward(records, items, "old", DEFAULT_W),
-      hybrid: hybridM
+      hybrid: hybridM,
+      remain: walkForward(records, items, "remain", DEFAULT_W)
     };
     fitted = {
       w: { base: 1, recent: 0.3, round: 0.4, trans: 0.15, hazard: 0 },
@@ -364,15 +402,16 @@
       base: level(feat.decayed, [0.07, 0.045]),
       recent: level(feat.recent, [0.08, 0.04]),
       site: "보통",
-      round: feat.inRound ? "이미 출제" : "미출제",
-      gap: feat.hazardUsed ? level(feat.hazard / Math.max(feat.base, 1e-6), [1.2, 0.85]) : "데이터 부족·기본율 사용",
+      round: feat.inRound ? "이번 회차 이미 출제" : "이번 회차 잔여",
+      gap: "공백 " + feat.wait + "시험",
+      opener: feat.isOpenerDay ? ("첫날 단골 " + (feat.openerHits || 0) + "회") : "해당 없음",
       trans: feat.transUsed ? (feat.transP > feat.base * 1.15 ? "약한 상승" : "없음") : "표본 부족"
     };
   }
 
   function predict(records, items, date, session) {
     var exams = labeled(priorByDate(records, date), items);
-    var rows = rankBy(exams, date, session, items, "hybrid", DEFAULT_W);
+    var rows = rankBy(exams, date, session, items, "remain", DEFAULT_W);
     var ids = examItems(items).map(function (item) { return item.id; });
     return rows.map(function (row) {
       return {
