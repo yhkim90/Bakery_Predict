@@ -191,7 +191,7 @@
 </head>
 <body>
   <main class="app" id="app"></main>
-  <script src="prediction.js?v=5"></script>
+  <script src="prediction.js?v=6"></script>
   <script>
 (function () {
   var STORAGE_KEY = "bakery-predict-practical-v1";
@@ -244,7 +244,8 @@
         "단과자빵소보로빵": "soboro", "단과자빵크림빵": "cream",
         "트위스트형단과자빵": "twist", "단과자빵트위스트형": "twist",
         "트위스트": "twist", "트위스트빵": "twist",
-        "소세지빵": "sausage", "빵도너츠": "donut", "도넛": "donut", "도너츠": "donut"
+        "소세지빵": "sausage", "빵도너츠": "donut", "빵 도넛": "donut", "도넛": "donut", "도너츠": "donut",
+        "풀만식빵": "pullman"
       }
     },
     pastry: {
@@ -284,10 +285,14 @@
         "과일케익파운드": "fruitcake", "과일케익": "fruitcake", "과일케이크": "fruitcake",
         "파운드": "pound", "파운드케익": "pound",
         "치즈케익": "cheesecake",
-        "쇼트브레드": "shortbread",
+        "쇼트브레드": "shortbread", "쇼트브레드쿠키": "shortbread",
         "슈크림": "choux", "에클레어": "choux",
         "젤리롤케익": "jellyroll",
-        "초코케익롤": "choroll", "초콜릿롤": "choroll"
+        "초코케익롤": "choroll", "초콜릿롤": "choroll", "초코롤케이크": "choroll", "초코롤케익": "choroll",
+        "다쿠아즈": "dacquoise", "다쿠와즈": "dacquoise",
+        "흑미롤케이크": "blackriceroll", "흑미롤케익": "blackriceroll",
+        "버터스펀지케이크": "sponge_com", "버터스폰지케이크": "sponge_com",
+        "마데이라케익": "madeira", "마데이라케이크": "madeira"
       }
     }
   };
@@ -834,11 +839,13 @@
     var sameDay = recordsOn(date).some(function (row) {
       return row.itemId === itemId;
     });
+    var yearHits = hits.filter(function (row) { return daysBetween(row.date, date) <= 366; }).length;
     var gap = last ? daysBetween(last.date, date) : null;
     return {
       last: last,
       gap: gap,
       total: hits.length,
+      yearHits: yearHits,
       monthHits: monthHits,
       recent30: recent30,
       roundHits: roundHits,
@@ -886,7 +893,7 @@
   function hitRateKey(untilDate) {
     var n = state.records.length;
     var last = n ? state.records[n - 1] : null;
-    return "remain-exam|" + state.subject + "|" + untilDate + "|" + n + "|" + (last ? last.date + ":" + last.itemId + ":" + last.session : "");
+    return "remain-freq|" + state.subject + "|" + untilDate + "|" + n + "|" + (last ? last.date + ":" + last.itemId + ":" + last.session : "");
   }
 
   function labeledCountUntil(untilDate) {
@@ -1178,7 +1185,7 @@
         '<div class="card"><small>이번 회차 시험일</small><strong>' + examRoundN + "</strong></div>" +
         '<div class="card"><small>이번 달 품목</small><strong>' + Object.keys(unique).length + "</strong></div>" +
       "</div>" +
-      '<p class="lede">미실시는 건너뜁니다. 이번 회차 잔여 품목과 공백, 회차 첫날 단골로 예상합니다.</p>' +
+      '<p class="lede">미실시는 건너뜁니다. 최근 1년 출제가 거의 없는 품목은 예상에 올리지 않고, 자주 나온 품목 안에서 회차 잔여·공백을 봅니다.</p>' +
       (!state.records.length
         ? '<div class="empty card">아직 기출이 없습니다. 회차와 날짜를 넣으면 예상이 생깁니다.</div>'
         : examDay
@@ -1221,6 +1228,7 @@
   function whyHtml(why) {
     if (!why) return "";
     return "<div>이번 회차: " + why.round + "</div>" +
+      "<div>최근 1년: " + (why.year || "-") + "</div>" +
       "<div>공백: " + why.gap + "</div>" +
       "<div>회차 첫날: " + (why.opener || "-") + "</div>" +
       "<div>기본 출제율: " + why.base + "</div>" +
@@ -1435,14 +1443,14 @@
     root.innerHTML =
       '<div class="topbar"><button class="ghost" type="button" id="refresh-app">새로고침</button><h1>' + currentMeta().name + ' 품목</h1><span class="ghost"></span></div>' +
       subjectSwitchHtml() +
-      '<p class="lede">' + formatKor(date) + " 예상 순위 순입니다. 같은 날 이미 나온 품목은 맨 아래입니다.</p>" +
+      '<p class="lede">' + formatKor(date) + " 예상 순위 순입니다. 최근 1년 출제 횟수가 같이 보입니다.</p>" +
       '<p class="lede" id="hit-lede">오늘까지 적중률을 계산하는 중…</p>' +
       '<div class="card">' + list.map(function (item) {
           var info = byId[item.id];
           var s = statsFor(item.id, date, session);
           var last = s.last ? s.last.date : "기록 없음";
           return '<div class="item-link"><div><strong>' + escapeHtml(item.name) + "</strong><span>" +
-            "최근 " + last + " · 누적 " + s.total + "회</span></div>" +
+            "1년 " + s.yearHits + "회 · 누적 " + s.total + "회</span></div>" +
             '<span class="pill">' + (info ? info.rank + "위" : "-") + "</span></div>";
         }).join("") + "</div>" +
       tabBar("items");

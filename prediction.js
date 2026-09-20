@@ -224,8 +224,17 @@
       transP: transP,
       transUsed: transUsed,
       count: counts[itemId] || 0,
+      yearCount: 0,
+      yearN: 0,
       group: GROUPS[itemId] || ""
     };
+  }
+
+  function yearWindow(exams, date) {
+    return exams.filter(function (row) {
+      var gap = daysBetween(row.date, date);
+      return gap >= 0 && gap <= 366;
+    });
   }
 
   function hybridScore(feat) {
@@ -259,8 +268,17 @@
 
   function remainScore(itemId, feat, ctx) {
     if (feat.inRound) return -1e6;
-    var score = feat.wait;
-    if (ctx.isOpener) score += (ctx.openers[itemId] || 0) * 30;
+    var yearN = feat.yearN || 0;
+    var yearCount = feat.yearCount || 0;
+    var k = ctx.k || 20;
+    var expected = yearN > 0 ? yearN / k : 0;
+    if (yearCount === 0 && feat.count === 0) return -1e5;
+    if (yearCount === 0) return -80 + Math.min(feat.wait, 6) * 0.02;
+    var score = Math.log(yearCount + 0.5) * 14;
+    var waitCap = expected > 0 ? expected * 2 : 16;
+    var waitW = yearCount >= expected * 0.45 ? 0.75 : 0.12;
+    score += Math.min(feat.wait, waitCap) * waitW;
+    if (ctx.isOpener) score += (ctx.openers[itemId] || 0) * 18;
     return score;
   }
 
@@ -275,14 +293,20 @@
 
   function rankBy(exams, date, session, items, mode, w) {
     var ids = examItems(items).map(function (item) { return item.id; });
+    var yearExams = yearWindow(exams, date);
+    var yearCounts = countBy(yearExams);
     var ctx = {
       isOpener: isRoundOpener(exams, date, session),
-      openers: openerCounts(exams)
+      openers: openerCounts(exams),
+      k: ids.length,
+      yearN: yearExams.length
     };
     var rows = examItems(items).map(function (item) {
       var feat = featureRow(item.id, exams, date, session, ids);
       feat.isOpenerDay = ctx.isOpener;
       feat.openerHits = ctx.openers[item.id] || 0;
+      feat.yearCount = yearCounts[item.id] || 0;
+      feat.yearN = yearExams.length;
       var score = mode === "old"
         ? oldScore(item.id, exams, date, session)
         : mode === "freq"
@@ -301,7 +325,19 @@
       if (unused.length) rows = unused;
     }
     if (mode !== "old") {
-      var probs = softmax(rows.map(function (row) { return row.score; }), mode === "stat" ? 0.85 : 1);
+      var scores = rows.map(function (row) { return row.score; });
+      var temp = 1;
+      if (mode === "stat") temp = 0.85;
+      if (mode === "remain" && scores.length) {
+        var maxS = -Infinity;
+        var minS = Infinity;
+        scores.forEach(function (s) {
+          if (s > maxS) maxS = s;
+          if (s < minS) minS = s;
+        });
+        temp = Math.max(6, (maxS - minS) / 3);
+      }
+      var probs = softmax(scores, temp);
       rows.forEach(function (row, i) { row.prob = probs[i]; });
     } else {
       var max = Math.max.apply(null, rows.map(function (row) { return row.score; }));
@@ -408,6 +444,7 @@
       site: "보통",
       round: feat.inRound ? "이번 회차 이미 출제" : "이번 회차 잔여",
       gap: "공백 " + feat.wait + "시험",
+      year: (feat.yearCount || 0) + "회 / 최근 1년",
       opener: feat.isOpenerDay ? ("첫날 단골 " + (feat.openerHits || 0) + "회") : "해당 없음",
       trans: feat.transUsed ? (feat.transP > feat.base * 1.15 ? "약한 상승" : "없음") : "표본 부족"
     };
