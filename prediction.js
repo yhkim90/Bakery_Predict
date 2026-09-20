@@ -122,6 +122,7 @@
     var hits = 0;
     var byRound = {};
     exams.forEach(function (row, i) {
+      if (!row.session) return;
       var key = yearOf(row.date) + ":" + row.session;
       if (!byRound[key]) byRound[key] = [];
       byRound[key].push({ i: i, id: row.itemId });
@@ -198,9 +199,12 @@
     var wait = lastIndex(exams, itemId);
     wait = wait < 0 ? n + 1 : n - wait;
     var haz = hazardAt(exams, itemId, wait, base);
-    var inRound = exams.filter(function (row) {
-      return yearOf(row.date) === yearOf(date) && Number(row.session) === Number(session) && row.itemId === itemId;
-    }).length;
+    var inRound = 0;
+    if (session && Number(session) > 0) {
+      inRound = exams.filter(function (row) {
+        return Number(row.session) > 0 && yearOf(row.date) === yearOf(date) && Number(row.session) === Number(session) && row.itemId === itemId;
+      }).length;
+    }
     var rpt = repeatRate(exams);
     var roundP = inRound ? Math.max(0.004, rpt) : base;
     var prev = n ? exams[n - 1].itemId : null;
@@ -231,10 +235,18 @@
   }
 
   function yearWindow(exams, date) {
-    return exams.filter(function (row) {
-      var gap = daysBetween(row.date, date);
-      return gap >= 0 && gap <= 366;
-    });
+    var prevY = String(Number(yearOf(date)) - 1);
+    var prev = exams.filter(function (row) { return yearOf(row.date) === prevY; });
+    if (prev.length >= 12) return { rows: prev, label: prevY + "년" };
+    var sameY = exams.filter(function (row) { return yearOf(row.date) === yearOf(date); });
+    if (sameY.length >= 12) return { rows: sameY, label: yearOf(date) + "년" };
+    return {
+      rows: exams.filter(function (row) {
+        var gap = daysBetween(row.date, date);
+        return gap >= 0 && gap <= 366;
+      }),
+      label: "최근 1년"
+    };
   }
 
   function hybridScore(feat) {
@@ -252,6 +264,7 @@
     var firsts = {};
     var seen = {};
     exams.forEach(function (row) {
+      if (!row.session) return;
       var key = yearOf(row.date) + ":" + row.session;
       if (seen[key]) return;
       seen[key] = true;
@@ -262,7 +275,7 @@
 
   function isRoundOpener(exams, date, session) {
     return !exams.some(function (row) {
-      return yearOf(row.date) === yearOf(date) && Number(row.session) === Number(session);
+      return Number(row.session) > 0 && yearOf(row.date) === yearOf(date) && Number(row.session) === Number(session);
     });
   }
 
@@ -293,13 +306,15 @@
 
   function rankBy(exams, date, session, items, mode, w) {
     var ids = examItems(items).map(function (item) { return item.id; });
-    var yearExams = yearWindow(exams, date);
+    var freq = yearWindow(exams, date);
+    var yearExams = freq.rows;
     var yearCounts = countBy(yearExams);
     var ctx = {
       isOpener: isRoundOpener(exams, date, session),
       openers: openerCounts(exams),
       k: ids.length,
-      yearN: yearExams.length
+      yearN: yearExams.length,
+      yearLabel: freq.label
     };
     var rows = examItems(items).map(function (item) {
       var feat = featureRow(item.id, exams, date, session, ids);
@@ -307,6 +322,7 @@
       feat.openerHits = ctx.openers[item.id] || 0;
       feat.yearCount = yearCounts[item.id] || 0;
       feat.yearN = yearExams.length;
+      feat.yearLabel = freq.label;
       var score = mode === "old"
         ? oldScore(item.id, exams, date, session)
         : mode === "freq"
@@ -444,7 +460,7 @@
       site: "보통",
       round: feat.inRound ? "이번 회차 이미 출제" : "이번 회차 잔여",
       gap: "공백 " + feat.wait + "시험",
-      year: (feat.yearCount || 0) + "회 / 최근 1년",
+      year: (feat.yearCount || 0) + "회 / " + (feat.yearLabel || "기준연도"),
       opener: feat.isOpenerDay ? ("첫날 단골 " + (feat.openerHits || 0) + "회") : "해당 없음",
       trans: feat.transUsed ? (feat.transP > feat.base * 1.15 ? "약한 상승" : "없음") : "표본 부족"
     };

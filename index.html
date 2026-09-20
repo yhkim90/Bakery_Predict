@@ -191,7 +191,7 @@
 </head>
 <body>
   <main class="app" id="app"></main>
-  <script src="prediction.js?v=6"></script>
+  <script src="prediction.js?v=7"></script>
   <script>
 (function () {
   var STORAGE_KEY = "bakery-predict-practical-v1";
@@ -619,8 +619,7 @@
       if (!date) return false;
       yearHint = Number(yearOf(date));
       if (!session) session = lastSessionNo;
-      if (!session) return false;
-      lastSessionNo = session;
+      // 회차를 모르면 0. 날짜·품목만으로 빈도에는 넣는다.
       var itemId = "unknown";
       var extra = note || "";
       itemText = String(itemText || "").trim();
@@ -636,6 +635,7 @@
         itemId: itemId,
         note: extra
       });
+      if (session) lastSessionNo = session;
       return true;
     }
 
@@ -668,10 +668,6 @@
         errors.push((idx + 1) + "행: 날짜를 읽지 못함");
         return;
       }
-      if (!session) {
-        errors.push((idx + 1) + "행: 회차 오류");
-        return;
-      }
       dates.forEach(function (date) {
         addRow(date, session, itemText, "");
       });
@@ -684,6 +680,7 @@
       "종목: " + currentMeta().name,
       "시험장: " + state.site,
       "# 형식: 날짜  회차  품목",
+      "# 회차를 모르면 날짜와 품목만 적어도 됩니다. 빈도 계산에는 들어갑니다.",
       "# 같은 회차에 시험일이 여러 날 있습니다.",
       "# 품목을 모르면 비우거나 미확인, 아직 안 본 날은 예정, 시험 없으면 미실시"
     ];
@@ -691,7 +688,9 @@
       if (a.session !== b.session) return a.session - b.session;
       return a.date < b.date ? -1 : 1;
     }).forEach(function (row) {
-      var line = row.date + "\t" + row.session + "회\t" + itemName(row.itemId);
+      var line = row.session
+        ? row.date + "\t" + row.session + "회\t" + itemName(row.itemId)
+        : row.date + "\t" + itemName(row.itemId);
       if (row.note) line += "\t" + row.note;
       lines.push(line);
     });
@@ -753,14 +752,16 @@
   }
 
   function isExamPredictDate(date) {
-    return recordsOn(date).some(function (row) { return row.itemId !== "none"; });
+    return recordsOn(date).some(function (row) {
+      return row.itemId !== "none" && Number(row.session) > 0;
+    });
   }
 
   function allExamDates() {
     var seen = {};
     var dates = [];
     state.records.forEach(function (row) {
-      if (row.itemId === "none" || seen[row.date]) return;
+      if (row.itemId === "none" || Number(row.session) < 1 || seen[row.date]) return;
       seen[row.date] = true;
       dates.push(row.date);
     });
@@ -839,13 +840,19 @@
     var sameDay = recordsOn(date).some(function (row) {
       return row.itemId === itemId;
     });
-    var yearHits = hits.filter(function (row) { return daysBetween(row.date, date) <= 366; }).length;
+    var freqYear = String(Number(yearOf(date)) - 1);
+    var yearHits = hits.filter(function (row) { return yearOf(row.date) === freqYear; }).length;
+    if (!yearHits && hits.length) {
+      yearHits = hits.filter(function (row) { return daysBetween(row.date, date) <= 366; }).length;
+      freqYear = "";
+    }
     var gap = last ? daysBetween(last.date, date) : null;
     return {
       last: last,
       gap: gap,
       total: hits.length,
       yearHits: yearHits,
+      yearLabel: freqYear ? freqYear + "년" : "1년",
       monthHits: monthHits,
       recent30: recent30,
       roundHits: roundHits,
@@ -893,7 +900,7 @@
   function hitRateKey(untilDate) {
     var n = state.records.length;
     var last = n ? state.records[n - 1] : null;
-    return "remain-freq|" + state.subject + "|" + untilDate + "|" + n + "|" + (last ? last.date + ":" + last.itemId + ":" + last.session : "");
+    return "remain-yprev|" + state.subject + "|" + untilDate + "|" + n + "|" + (last ? last.date + ":" + last.itemId + ":" + last.session : "");
   }
 
   function labeledCountUntil(untilDate) {
@@ -1185,7 +1192,7 @@
         '<div class="card"><small>이번 회차 시험일</small><strong>' + examRoundN + "</strong></div>" +
         '<div class="card"><small>이번 달 품목</small><strong>' + Object.keys(unique).length + "</strong></div>" +
       "</div>" +
-      '<p class="lede">미실시는 건너뜁니다. 최근 1년 출제가 거의 없는 품목은 예상에 올리지 않고, 자주 나온 품목 안에서 회차 잔여·공백을 봅니다.</p>' +
+      '<p class="lede">미실시는 건너뜁니다. 직전 해(제빵은 2025년) 출제 빈도를 기준으로, 거의 안 나온 품목은 예상에 올리지 않습니다.</p>' +
       (!state.records.length
         ? '<div class="empty card">아직 기출이 없습니다. 회차와 날짜를 넣으면 예상이 생깁니다.</div>'
         : examDay
@@ -1443,14 +1450,14 @@
     root.innerHTML =
       '<div class="topbar"><button class="ghost" type="button" id="refresh-app">새로고침</button><h1>' + currentMeta().name + ' 품목</h1><span class="ghost"></span></div>' +
       subjectSwitchHtml() +
-      '<p class="lede">' + formatKor(date) + " 예상 순위 순입니다. 최근 1년 출제 횟수가 같이 보입니다.</p>" +
+      '<p class="lede">' + formatKor(date) + " 예상 순위 순입니다. 직전 해 출제 횟수가 같이 보입니다.</p>" +
       '<p class="lede" id="hit-lede">오늘까지 적중률을 계산하는 중…</p>' +
       '<div class="card">' + list.map(function (item) {
           var info = byId[item.id];
           var s = statsFor(item.id, date, session);
           var last = s.last ? s.last.date : "기록 없음";
           return '<div class="item-link"><div><strong>' + escapeHtml(item.name) + "</strong><span>" +
-            "1년 " + s.yearHits + "회 · 누적 " + s.total + "회</span></div>" +
+            (s.yearLabel || "1년") + " " + s.yearHits + "회 · 누적 " + s.total + "회</span></div>" +
             '<span class="pill">' + (info ? info.rank + "위" : "-") + "</span></div>";
         }).join("") + "</div>" +
       tabBar("items");
@@ -1636,6 +1643,7 @@
         "종목: " + currentMeta().name + "\n" +
         "시험장: " + state.site + "\n" +
         "# 형식: 날짜  회차  품목\n" +
+        "# 회차를 모르면 날짜와 품목만 적어도 됩니다.\n" +
         "# 품목 모르면 미확인, 아직 안 본 날은 예정, 시험 없으면 미실시\n");
     });
     document.getElementById("apply").addEventListener("click", function () {
